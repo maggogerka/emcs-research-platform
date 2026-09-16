@@ -29,5 +29,9 @@ jobs:
     container: espressif/idf:release-v6.0
     steps:
       - uses: actions/checkout@v4
-      - run: idf.py set-target esp32s3
-      - run: idf.py build
+      - name: Configure and build ESP32-S3 firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py set-target esp32s3
+          idf.py build
