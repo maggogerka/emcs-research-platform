@@ -3,14 +3,35 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Mapping
 
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
-from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 MOUNT_ORIENTATIONS = ("default", "x_up", "x_down", "y_up", "y_down", "z_down")
+
+CALIBRATION_POSES = (
+    ("level", "Положите модуль ровно, верхней стороной вверх."),
+    ("left", "Поверните модуль на левый бок и удерживайте неподвижно."),
+    ("right", "Поверните модуль на правый бок и удерживайте неподвижно."),
+    ("nose_down", "Наклоните переднюю часть модуля вниз и удерживайте."),
+    ("nose_up", "Наклоните переднюю часть модуля вверх и удерживайте."),
+    ("upside_down", "Переверните модуль верхней стороной вниз."),
+    ("reference", "Верните модуль в ровное положение — это будет нулевой наклон."),
+)
 
 
 def mount_sample(sample: Mapping[str, float], mounting: str) -> dict[str, float]:
@@ -29,6 +50,114 @@ def mount_sample(sample: Mapping[str, float], mounting: str) -> dict[str, float]
     ax, ay, az = transform(a)
     gx, gy, gz = transform(g)
     return dict(zip(("ax", "ay", "az", "gx", "gy", "gz"), (ax, ay, az, gx, gy, gz)))
+
+
+@dataclass(frozen=True, slots=True)
+class OrientationCalibration:
+    accel_bias: tuple[float, float, float]
+    accel_scale: tuple[float, float, float]
+    gyro_bias: tuple[float, float, float]
+
+    def apply(self, sample: Mapping[str, float]) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for index, axis in enumerate(("x", "y", "z")):
+            result[f"a{axis}"] = (
+                float(sample[f"a{axis}"]) - self.accel_bias[index]
+            ) * self.accel_scale[index]
+            result[f"g{axis}"] = float(sample[f"g{axis}"]) - self.gyro_bias[index]
+        return result
+
+
+class SixPoseCalibration:
+    """Stationary six-face accelerometer calibration plus gyro residual bias."""
+
+    sample_count = 80
+
+    def __init__(self) -> None:
+        self.pose_index = 0
+        self.measurements: dict[str, dict[str, float]] = {}
+        self.result: OrientationCalibration | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.pose_index < len(CALIBRATION_POSES)
+
+    @property
+    def instruction(self) -> str:
+        return CALIBRATION_POSES[self.pose_index][1] if self.active else "Калибровка завершена."
+
+    def reset(self) -> None:
+        self.pose_index = 0
+        self.measurements.clear()
+        self.result = None
+
+    @staticmethod
+    def _mean(samples: list[Mapping[str, float]], name: str) -> float:
+        return sum(float(sample[name]) for sample in samples) / len(samples)
+
+    def capture(self, samples: list[Mapping[str, float]]) -> OrientationCalibration | None:
+        if not self.active:
+            return self.result
+        if len(samples) < self.sample_count:
+            raise ValueError("Недостаточно отсчётов; удерживайте модуль неподвижно.")
+        names = ("ax", "ay", "az", "gx", "gy", "gz")
+        means = {name: self._mean(samples, name) for name in names}
+        standard_deviations = {
+            name: math.sqrt(
+                sum((float(sample[name]) - means[name]) ** 2 for sample in samples)
+                / len(samples)
+            )
+            for name in names
+        }
+        accel_norm = math.sqrt(sum(means[name] ** 2 for name in ("ax", "ay", "az")))
+        gyro_norm = math.sqrt(sum(means[name] ** 2 for name in ("gx", "gy", "gz")))
+        if not 0.65 <= accel_norm <= 1.35:
+            raise ValueError("Положение нестабильно: модуль должен быть неподвижен под действием 1 g.")
+        if max(standard_deviations[name] for name in ("ax", "ay", "az")) > 0.055:
+            raise ValueError("Модуль двигался во время захвата. Повторите положение.")
+        if gyro_norm > 8.0 or max(standard_deviations[name] for name in ("gx", "gy", "gz")) > 2.0:
+            raise ValueError("Вращение ещё не остановилось. Удерживайте модуль и повторите.")
+
+        pose = CALIBRATION_POSES[self.pose_index][0]
+        self.measurements[pose] = means
+        self.pose_index += 1
+        if self.active:
+            return None
+        try:
+            self.result = self._solve()
+        except ValueError:
+            self.reset()
+            raise
+        return self.result
+
+    def _solve(self) -> OrientationCalibration:
+        pairs = (("left", "right", "ax"), ("nose_down", "nose_up", "ay"),
+                 ("level", "upside_down", "az"))
+        accel_bias: list[float] = []
+        accel_scale: list[float] = []
+        for first, second, axis in pairs:
+            a = self.measurements[first][axis]
+            b = self.measurements[second][axis]
+            span = abs(a - b)
+            if span < 1.25:
+                raise ValueError(
+                    f"Пара положений {first}/{second} недостаточно различается по {axis}. "
+                    "Проверьте Mounting и повторите калибровку."
+                )
+            accel_bias.append((a + b) / 2.0)
+            accel_scale.append(2.0 / span)
+        gyro_bias = tuple(
+            sum(values[f"g{axis}"] for values in self.measurements.values())
+            / len(self.measurements)
+            for axis in ("x", "y", "z")
+        )
+        result = OrientationCalibration(tuple(accel_bias), tuple(accel_scale), gyro_bias)
+        reference = result.apply(self.measurements["reference"])
+        if reference["az"] < 0.65 or abs(reference["ax"]) > 0.35 or abs(reference["ay"]) > 0.35:
+            raise ValueError(
+                "Нулевое положение не распознано как ровное. Проверьте Mounting и повторите."
+            )
+        return result
 
 
 class ComplementaryOrientation:
@@ -124,10 +253,15 @@ class OrientationCanvas(QWidget):
 
 class OrientationPanel(QWidget):
     enabled_changed = Signal(bool)
+    device_calibration_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.filter = ComplementaryOrientation()
+        self.calibrator = SixPoseCalibration()
+        self.calibration: OrientationCalibration | None = None
+        self._capture_samples: list[dict[str, float]] = []
+        self._capturing = False
         self.latest_q = tuple(self.filter.q)
         self.enabled_box = QCheckBox("Enable 3D at 30 FPS")
         self.enabled_box.setChecked(True)
@@ -147,9 +281,35 @@ class OrientationPanel(QWidget):
         layout.addLayout(controls)
         layout.addWidget(warning)
         layout.addWidget(self.euler_label)
+
+        calibration_box = QGroupBox("Пошаговая калибровка MPU6050")
+        calibration_layout = QVBoxLayout(calibration_box)
+        self.calibration_instruction = QLabel(
+            "Нажмите «Начать калибровку». Для каждого положения дождитесь неподвижности и нажмите «Захватить»."
+        )
+        self.calibration_instruction.setWordWrap(True)
+        self.calibration_status = QLabel("Не выполнена")
+        self.calibration_progress = QProgressBar()
+        self.calibration_progress.setRange(0, len(CALIBRATION_POSES))
+        calibration_buttons = QHBoxLayout()
+        self.calibration_start = QPushButton("Начать / повторить калибровку")
+        self.calibration_capture = QPushButton("Захватить положение")
+        self.calibration_capture.setEnabled(False)
+        calibration_buttons.addWidget(self.calibration_start)
+        calibration_buttons.addWidget(self.calibration_capture)
+        calibration_buttons.addStretch()
+        calibration_layout.addWidget(self.calibration_instruction)
+        calibration_layout.addWidget(self.calibration_status)
+        calibration_layout.addWidget(self.calibration_progress)
+        calibration_layout.addLayout(calibration_buttons)
+        layout.addWidget(calibration_box)
+
         self.canvas = OrientationCanvas()
         layout.addWidget(self.canvas, 1)
         self.reset_button.clicked.connect(self.reset)
+        self.calibration_start.clicked.connect(self.start_calibration)
+        self.calibration_capture.clicked.connect(self.capture_pose)
+        self.mount_combo.currentTextChanged.connect(self._mount_changed)
         self.enabled_box.toggled.connect(self.enabled_changed)
         self.timer = QTimer(self)
         self.timer.setInterval(33)
@@ -160,10 +320,81 @@ class OrientationPanel(QWidget):
         self.filter.reset()
         self.latest_q = tuple(self.filter.q)
 
+    def start_calibration(self) -> None:
+        self.calibrator.reset()
+        self.calibration = None
+        self._capturing = False
+        self._capture_samples.clear()
+        self.calibration_progress.setValue(0)
+        self.calibration_status.setText("Шаг 1 из 7")
+        self.calibration_instruction.setText(self.calibrator.instruction)
+        self.calibration_capture.setEnabled(True)
+        self.device_calibration_requested.emit()
+        self.reset()
+
+    def capture_pose(self) -> None:
+        if not self.calibrator.active or self._capturing:
+            return
+        self._capture_samples.clear()
+        self._capturing = True
+        self.calibration_capture.setEnabled(False)
+        self.calibration_status.setText("Захват: 0% — не двигайте модуль")
+
+    def _mount_changed(self) -> None:
+        if self.calibration is not None or self.calibrator.pose_index:
+            self.calibration = None
+            self.calibrator.reset()
+            self._capturing = False
+            self.calibration_capture.setEnabled(False)
+            self.calibration_progress.setValue(0)
+            self.calibration_status.setText("Mounting изменён — выполните калибровку заново")
+        self.reset()
+
     def update_sample(self, sample: Mapping[str, float], dt_s: float) -> None:
         if self.enabled_box.isChecked():
             transformed = mount_sample(sample, self.mount_combo.currentText())
-            self.latest_q = self.filter.update(transformed, dt_s)
+            if self._capturing:
+                self._capture_samples.append(transformed)
+                count = len(self._capture_samples)
+                self.calibration_status.setText(
+                    f"Захват: {min(100, round(count * 100 / self.calibrator.sample_count))}% — не двигайте модуль"
+                )
+                if count >= self.calibrator.sample_count:
+                    self._finish_pose_capture()
+            corrected = self.calibration.apply(transformed) if self.calibration else transformed
+            self.latest_q = self.filter.update(corrected, dt_s)
+
+    def _finish_pose_capture(self) -> None:
+        self._capturing = False
+        try:
+            result = self.calibrator.capture(self._capture_samples)
+        except ValueError as error:
+            self.calibration_status.setText(str(error))
+            self.calibration_instruction.setText(self.calibrator.instruction)
+            self.calibration_progress.setValue(self.calibrator.pose_index)
+            self.calibration_capture.setEnabled(True)
+            return
+        completed = self.calibrator.pose_index
+        self.calibration_progress.setValue(completed)
+        if result is None:
+            self.calibration_status.setText(
+                f"Положение принято. Шаг {completed + 1} из {len(CALIBRATION_POSES)}"
+            )
+            self.calibration_instruction.setText(self.calibrator.instruction)
+            self.calibration_capture.setEnabled(True)
+            return
+        self.calibration = result
+        self.reset()
+        bias = ", ".join(f"{value:+.4f}" for value in result.accel_bias)
+        scale = ", ".join(f"{value:.4f}" for value in result.accel_scale)
+        gyro = ", ".join(f"{value:+.3f}" for value in result.gyro_bias)
+        self.calibration_instruction.setText(
+            "Калибровка применена к 3D-модели. Оставьте модуль ровно для проверки нулевого положения."
+        )
+        self.calibration_status.setText(
+            f"Готово · accel bias [{bias}] g · scale [{scale}] · gyro bias [{gyro}] °/s"
+        )
+        self.calibration_capture.setEnabled(False)
 
     def _render(self) -> None:
         if not self.enabled_box.isChecked():

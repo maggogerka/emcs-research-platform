@@ -43,7 +43,9 @@ class Phase:
     prescribed_intensity: str
 
     def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+        values = asdict(self)
+        values["phase"] = values.pop("name")
+        return values
 
 
 class ExperimentSchedule:
@@ -182,7 +184,11 @@ class ExperimentController(QObject):
         if self._state == "waiting_calibration":
             result["phase"] = "calibration_rest"
             return result
-        if self._schedule is None or self._phase_index < 0:
+        if (
+            self._schedule is None
+            or self._phase_index < 0
+            or self._phase_index >= len(self._schedule.phases)
+        ):
             return result
         phase = self._schedule.phases[self._phase_index]
         elapsed = (
@@ -222,9 +228,9 @@ class ExperimentController(QObject):
         phase = self._schedule.phases[self._phase_index]
         if self._clock() - self._phase_started < phase.duration_s:
             return
-        self._phase_index += 1
-        if self._phase_index >= len(self._schedule.phases):
+        if self._phase_index + 1 >= len(self._schedule.phases):
             self.stop("completed")
             return
+        self._phase_index += 1
         self._phase_started = self._clock()
         self._emit_phase()

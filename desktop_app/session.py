@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from typing import Any, Iterable
 import uuid
 
@@ -83,6 +84,7 @@ class SessionRecorder:
         self.sample_counts = {"emg": 0, "imu": 0}
         self.first_timestamps: dict[str, int] = {}
         self.last_timestamps: dict[str, int] = {}
+        self._last_sample_flush = 0.0
 
     @property
     def active(self) -> bool:
@@ -92,6 +94,10 @@ class SessionRecorder:
         if self.active:
             raise RuntimeError("a recording session is already active")
         participant_id = validate_participant_id(str(metadata.get("participant_id", "")))
+        self.sample_counts = {"emg": 0, "imu": 0}
+        self.first_timestamps.clear()
+        self.last_timestamps.clear()
+        self._last_sample_flush = time.monotonic()
         session_id = f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}"
         root = (base_dir or self.project_root / "data" / "recordings") / session_id
         root.mkdir(parents=True, exist_ok=False)
@@ -112,7 +118,9 @@ class SessionRecorder:
             "format_version": 2,
             "label_source": "device_phase_markers",
         }
-        self._sample_file = self.paths.samples.open("w", newline="", encoding="utf-8")
+        self._sample_file = self.paths.samples.open(
+            "w", newline="", encoding="utf-8", buffering=1024 * 1024
+        )
         self._event_file = self.paths.events.open("w", newline="", encoding="utf-8")
         self._sample_writer = csv.DictWriter(
             self._sample_file, fieldnames=SAMPLE_FIELDS, extrasaction="ignore"
@@ -140,7 +148,13 @@ class SessionRecorder:
         if self._sample_writer is None or self._sample_file is None:
             return
         self._sample_writer.writerows(rows)
-        self._sample_file.flush()
+        # Flushing every 32-sample frame forced a disk operation about 27
+        # times per second on the GUI thread. A one-second bounded buffer keeps
+        # the interface responsive while retaining crash-tolerant recording.
+        now = time.monotonic()
+        if now - self._last_sample_flush >= 1.0:
+            self._sample_file.flush()
+            self._last_sample_flush = now
 
     def write_emg(
         self,

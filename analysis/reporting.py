@@ -36,6 +36,31 @@ def _seconds(data: pd.DataFrame, origin_us: int) -> np.ndarray:
     return (_numeric(data, "timestamp_us") - origin_us) / 1_000_000.0
 
 
+def _display_subset(
+    data: pd.DataFrame,
+    value_columns: tuple[str, ...],
+    max_points: int = 20_000,
+) -> pd.DataFrame:
+    """Peak-preserving plot subset; calculations continue to use full data."""
+    if len(data) <= max_points or not value_columns:
+        return data
+    bucket_count = max(1, max_points // (2 * len(value_columns)))
+    boundaries = np.linspace(0, len(data), bucket_count + 1, dtype=int)
+    selected: set[int] = {0, len(data) - 1}
+    arrays = [_numeric(data, column) for column in value_columns]
+    for start, end in zip(boundaries[:-1], boundaries[1:], strict=True):
+        if end <= start:
+            continue
+        for values in arrays:
+            segment = values[start:end]
+            finite = np.flatnonzero(np.isfinite(segment))
+            if finite.size:
+                finite_values = segment[finite]
+                selected.add(start + int(finite[np.argmin(finite_values)]))
+                selected.add(start + int(finite[np.argmax(finite_values)]))
+    return data.iloc[sorted(selected)]
+
+
 def _save_pair(figure: plt.Figure, directory: Path, stem: str) -> list[Path]:
     directory.mkdir(parents=True, exist_ok=True)
     png = directory / f"{stem}.png"
@@ -81,19 +106,22 @@ def _signal_figures(
     origin_us: int,
 ) -> list[Path]:
     paths: list[Path] = []
-    time_s = _seconds(emg, origin_us)
+    overview = _display_subset(
+        emg, ("ads_voltage", "ac_voltage", "envelope_voltage"), max_points=20_000
+    )
+    time_s = _seconds(overview, origin_us)
     figure, axes = plt.subplots(3, 1, figsize=(13, 8), sharex=True)
-    axes[0].plot(time_s, _numeric(emg, "ads_voltage"), lw=0.55, color="#315a9b")
+    axes[0].plot(time_s, _numeric(overview, "ads_voltage"), lw=0.55, color="#315a9b")
     axes[0].set_ylabel("ADS1115, V")
     axes[0].set_title("AD8232 signal: absolute input, AC component and firmware envelope")
-    axes[1].plot(time_s, _numeric(emg, "ac_voltage"), lw=0.55, color="#147d64")
+    axes[1].plot(time_s, _numeric(overview, "ac_voltage"), lw=0.55, color="#147d64")
     axes[1].set_ylabel("Centered AC, V")
-    axes[2].plot(time_s, _numeric(emg, "envelope_voltage"), lw=0.7, label="Envelope")
+    axes[2].plot(time_s, _numeric(overview, "envelope_voltage"), lw=0.7, label="Envelope")
     for column, label, style in (
         ("fixed_on_voltage", "Fixed ON", "--"),
         ("adaptive_on_voltage", "Adaptive ON", ":"),
     ):
-        values = _numeric(emg, column)
+        values = _numeric(overview, column)
         if values.size:
             axes[2].plot(time_s, values, style, lw=0.8, label=label)
     axes[2].set_ylabel("Envelope, V")
@@ -123,7 +151,7 @@ def _signal_figures(
         paths += _save_pair(figure, directory, "02-example-prescribed-contraction")
 
     figure, axis = plt.subplots(figsize=(13, 4.8))
-    axis.plot(time_s, _numeric(emg, "envelope_voltage"), color="#555555", lw=0.55, label="Envelope")
+    axis.plot(time_s, _numeric(overview, "envelope_voltage"), color="#555555", lw=0.55, label="Envelope")
     _shade_phases(axis, intervals, origin_us)
     for detector, color, marker in (("fixed", "#d62728", "^"), ("adaptive", "#2ca02c", "v")):
         for index, event_time in enumerate(_event_times(events, detector, origin_us)):
@@ -198,9 +226,11 @@ def _physiology_figures(
 ) -> list[Path]:
     paths: list[Path] = []
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.8))
+    distribution_data = _display_subset(emg, ("envelope_voltage",), max_points=20_000)
     phase_order = ["calibration_rest", "prepare", "contract", "rest"]
     phase_values = [
-        _numeric(emg[emg["phase"].eq(phase)], "envelope_voltage") for phase in phase_order
+        _numeric(distribution_data[distribution_data["phase"].eq(phase)], "envelope_voltage")
+        for phase in phase_order
     ]
     valid_phases = [(name, values[np.isfinite(values)]) for name, values in zip(phase_order, phase_values, strict=True)]
     valid_phases = [(name, values) for name, values in valid_phases if values.size]
@@ -209,7 +239,10 @@ def _physiology_figures(
         axes[0].tick_params(axis="x", rotation=25)
     intensity_order = ["weak", "medium", "strong"]
     intensity_values = [
-        _numeric(emg[emg["prescribed_intensity"].eq(level)], "envelope_voltage")
+        _numeric(
+            distribution_data[distribution_data["prescribed_intensity"].eq(level)],
+            "envelope_voltage",
+        )
         for level in intensity_order
     ]
     valid_intensities = [
@@ -230,11 +263,14 @@ def _physiology_figures(
     paths += _save_pair(figure, directory, "08-envelope-distributions")
 
     figure, axes = plt.subplots(2, 1, figsize=(13, 7), sharex=True)
-    imu_time = _seconds(imu, origin_us)
+    imu_overview = _display_subset(
+        imu, ("ax", "ay", "az", "gx", "gy", "gz"), max_points=18_000
+    )
+    imu_time = _seconds(imu_overview, origin_us)
     for column in ("ax", "ay", "az"):
-        axes[0].plot(imu_time, _numeric(imu, column), lw=0.7, label=column)
+        axes[0].plot(imu_time, _numeric(imu_overview, column), lw=0.7, label=column)
     for column in ("gx", "gy", "gz"):
-        axes[1].plot(imu_time, _numeric(imu, column), lw=0.7, label=column)
+        axes[1].plot(imu_time, _numeric(imu_overview, column), lw=0.7, label=column)
     axes[0].set(title="MPU6050 motion during protocol", ylabel="Acceleration, g")
     axes[1].set(xlabel="Device time, s", ylabel="Angular rate, deg/s")
     for axis in axes:

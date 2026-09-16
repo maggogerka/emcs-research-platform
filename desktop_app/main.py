@@ -11,12 +11,12 @@ import time
 from typing import Any
 
 import pyqtgraph as pg
-from PySide6.QtCore import QProcess, QTimer, Qt
+from PySide6.QtCore import QPoint, QRect, QProcess, QTimer, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
-    QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QScrollArea, QTabWidget, QVBoxLayout, QWidget,
 )
 from serial.tools import list_ports
 
@@ -54,10 +54,14 @@ class MainWindow(QMainWindow):
         self.last_marker: dict[str, Any] | None = None
         self.last_device_timestamp_us = 0
         self.control_active = False
+        self.active_control_settings = None
+        self._control_last_tick = time.monotonic()
         self.mouse_mapper = MouseMapper()
         self.input_backend = SendInputBackend()
         self.settings_store = SettingsStore()
         self.analysis_process: QProcess | None = None
+        self._analysis_output: list[str] = []
+        self._plot_refresh_index = 0
 
         self.experiment = ExperimentController(self)
         self.experiment.phase_changed.connect(self._on_phase_changed)
@@ -78,6 +82,13 @@ class MainWindow(QMainWindow):
         self.plot_timer.setInterval(50)
         self.plot_timer.timeout.connect(self._refresh_plots)
         self.plot_timer.start()
+        # IMU samples arrive in batches. Replaying all ten SendInput calls at
+        # once feels jerky, so pointer motion is distributed by a precise timer.
+        self.control_timer = QTimer(self)
+        self.control_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.control_timer.setInterval(8)
+        self.control_timer.timeout.connect(self._control_tick)
+        self.control_timer.start()
         self.status_timer = QTimer(self)
         self.status_timer.setInterval(100)
         self.status_timer.timeout.connect(self._safety_tick)
@@ -146,9 +157,19 @@ class MainWindow(QMainWindow):
                                         {"gx": "#ef5350", "gy": "#66bb6a", "gz": "#42a5f5"})
         self.all_plots = [self.raw_plot, self.ac_plot, self.envelope_plot, self.accel_plot, self.gyro_plot]
         for plot in self.all_plots[1:]: plot.link_time_axis(self.raw_plot)
-        self.plot_splitter = QSplitter(Qt.Orientation.Vertical)
-        for plot in self.all_plots: self.plot_splitter.addWidget(plot)
-        layout.addWidget(self.plot_splitter)
+        # A splitter compressed five PlotWidgets to nearly zero graph height.
+        # A scrollable stack keeps every compact chart readable and cheap to
+        # lay out, while Expand still gives one chart the whole viewport.
+        self.plot_stack = QWidget()
+        self.plot_stack_layout = QVBoxLayout(self.plot_stack)
+        self.plot_stack_layout.setContentsMargins(0, 0, 0, 0)
+        for plot in self.all_plots:
+            self.plot_stack_layout.addWidget(plot)
+        self.plot_stack_layout.addStretch()
+        self.signals_scroll = QScrollArea()
+        self.signals_scroll.setWidgetResizable(True)
+        self.signals_scroll.setWidget(self.plot_stack)
+        layout.addWidget(self.signals_scroll)
         self._expanded_plot: ScientificPlot | None = None
         return widget
 
@@ -188,6 +209,9 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_requested.connect(self._enable_control)
         self.control_panel.disable_requested.connect(lambda: self._disable_control("disabled by user"))
         self.control_panel.reset_requested.connect(self.mouse_mapper.reset)
+        self.orientation.device_calibration_requested.connect(
+            lambda: self._send("CAL IMU", warn=True)
+        )
         self.apply_parameters.clicked.connect(self._apply_algorithm)
         self.save_profile.clicked.connect(self._save_algorithm_profile)
         self.load_profile.clicked.connect(self._load_algorithm_profile)
@@ -340,10 +364,6 @@ class MainWindow(QMainWindow):
             dt_s = 0.01 if self.latest_imu_timestamp is None else max(0.001, min(0.1, (sample["timestamp_us"] - self.latest_imu_timestamp) / 1e6))
             self.latest_imu_timestamp = int(sample["timestamp_us"])
             self.orientation.update_sample(sample, dt_s)
-            if self.control_active:
-                dx, dy = self.mouse_mapper.displacement(sample, self.control_panel.settings(), dt_s)
-                try: self.input_backend.move(dx, dy)
-                except Exception as error: self._disable_control(f"SendInput error: {error}")
         self.live_imu.setText(
             f"a=({self.latest_imu['ax']:.3f}, {self.latest_imu['ay']:.3f}, {self.latest_imu['az']:.3f}) g; "
             f"ω=({self.latest_imu['gx']:.2f}, {self.latest_imu['gy']:.2f}, {self.latest_imu['gz']:.2f}) deg/s"
@@ -357,7 +377,7 @@ class MainWindow(QMainWindow):
             if self.experiment.calibration_done():
                 self._log("Device confirmed EMG_CALIBRATION_DONE; prescribed trials begin")
         if self.control_active and event["event"] == "CONTRACTION_START":
-            settings = self.control_panel.settings()
+            settings = self.active_control_settings or self.control_panel.settings()
             if event["detector"] == settings.detector:
                 try: self.input_backend.click(settings.action, settings.custom_key)
                 except Exception as error: self._disable_control(f"SendInput error: {error}")
@@ -440,29 +460,58 @@ class MainWindow(QMainWindow):
     def _run_analysis(self, paths: SessionPaths) -> None:
         executable, arguments = SessionRecorder.analysis_command(paths)
         process = QProcess(self); self.analysis_process = process
+        self._analysis_output = []
         process.setProgram(executable); process.setArguments(arguments)
         process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.readyReadStandardOutput.connect(self._capture_analysis_output)
+        process.readyReadStandardError.connect(self._capture_analysis_output)
+        process.errorOccurred.connect(
+            lambda error: self._analysis_process_error(paths, error)
+        )
         process.finished.connect(lambda code, status: self._analysis_finished(paths, code))
         process.start(); self._log("Offline scientific analysis started")
 
-    def _analysis_finished(self, paths: SessionPaths, exit_code: int) -> None:
+    def _capture_analysis_output(self) -> None:
         process = self.analysis_process
-        output = bytes(process.readAllStandardOutput()).decode(errors="replace") if process else ""
-        errors = bytes(process.readAllStandardError()).decode(errors="replace") if process else ""
-        summary = f"Analysis exit code: {exit_code}\n{output}\n{errors}".strip()
+        if process is None:
+            return
+        for chunk in (process.readAllStandardOutput(), process.readAllStandardError()):
+            text = bytes(chunk).decode(errors="replace")
+            if text:
+                self._analysis_output.append(text)
+        if sum(map(len, self._analysis_output)) > 200_000:
+            self._analysis_output = ["".join(self._analysis_output)[-200_000:]]
+
+    def _analysis_process_error(self, paths: SessionPaths, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart:
+            return
+        summary = f"Analysis failed to start: {self.analysis_process.errorString() if self.analysis_process else error}"
+        self.results_panel.show_result(paths.root, paths.report, summary)
+        self.tabs.setCurrentWidget(self.results_panel)
+        self._log(summary)
+
+    def _analysis_finished(self, paths: SessionPaths, exit_code: int) -> None:
+        self._capture_analysis_output()
+        summary = f"Analysis exit code: {exit_code}\n{''.join(self._analysis_output)}".strip()
         self.results_panel.show_result(paths.root, paths.report, summary)
         self.tabs.setCurrentWidget(self.results_panel)
         self._log(f"Analysis finished with exit code {exit_code}")
+        self.analysis_process = None
 
     def _enable_control(self) -> None:
         reason = self._control_block_reason()
         if reason:
             self.control_panel.set_enabled_state(False, reason)
             QMessageBox.warning(self, "Computer Control blocked", reason); return
-        try: self.control_panel.settings().validate()
+        try:
+            settings = self.control_panel.settings()
+            settings.validate()
         except ValueError as error:
             QMessageBox.warning(self, "Control settings", str(error)); return
-        self.mouse_mapper.reset(); self.control_active = True
+        self.mouse_mapper.reset()
+        self.active_control_settings = settings
+        self._control_last_tick = time.monotonic()
+        self.control_active = True
         self.control_panel.set_enabled_state(True); self._log("Computer Control enabled after countdown")
 
     def _control_block_reason(self) -> str:
@@ -477,7 +526,9 @@ class MainWindow(QMainWindow):
 
     def _disable_control(self, reason: str) -> None:
         if self.control_active: self._log(f"Computer Control disabled: {reason}")
-        self.control_active = False; self.mouse_mapper.reset()
+        self.control_active = False
+        self.active_control_settings = None
+        self.mouse_mapper.reset()
         if hasattr(self, "control_panel"): self.control_panel.set_enabled_state(False, reason)
 
     def _safety_tick(self) -> None:
@@ -486,13 +537,49 @@ class MainWindow(QMainWindow):
             if reason: self._disable_control(reason)
         if self.worker is not None and int(time.monotonic() * 10) % 10 == 0: self.worker.send_command("STATUS")
 
+    def _control_tick(self) -> None:
+        now = time.monotonic()
+        dt_s = max(0.001, min(0.025, now - self._control_last_tick))
+        self._control_last_tick = now
+        if not self.control_active or self.active_control_settings is None:
+            return
+        if now - self.last_imu_host > 0.3:
+            self._disable_control("data stream stale >300 ms")
+            return
+        dx, dy = self.mouse_mapper.displacement(
+            self.latest_imu, self.active_control_settings, dt_s
+        )
+        try:
+            self.input_backend.move(dx, dy)
+        except Exception as error:
+            self._disable_control(f"SendInput error: {error}")
+
     def _refresh_plots(self) -> None:
-        for plot in self.all_plots: plot.refresh()
+        if self.tabs.currentWidget() is not self.signals:
+            return
+        viewport = self.signals_scroll.viewport()
+        visible_plots: list[ScientificPlot] = []
+        for plot in self.all_plots:
+            top_left = plot.mapTo(viewport, QPoint(0, 0))
+            plot_rect = QRect(top_left, plot.size())
+            if plot.isVisible() and plot_rect.intersects(viewport.rect()):
+                visible_plots.append(plot)
+        if not visible_plots:
+            return
+        # Refresh one canvas per timer turn. With three cards in view each is
+        # still updated about 6–7 FPS, but no single GUI turn paints all plots.
+        plot = visible_plots[self._plot_refresh_index % len(visible_plots)]
+        self._plot_refresh_index += 1
+        plot.refresh()
 
     def _toggle_expand_plot(self, target: ScientificPlot) -> None:
         expanding = self._expanded_plot is None
         self._expanded_plot = target if expanding else None
-        for plot in self.all_plots: plot.setVisible(not expanding or plot is target)
+        viewport_height = self.signals_scroll.viewport().height()
+        for plot in self.all_plots:
+            plot.setVisible(not expanding or plot is target)
+            plot.set_expanded(expanding and plot is target, viewport_height)
+        target.refresh()
 
     def _log(self, message: str) -> None:
         if hasattr(self, "event_log"): self.event_log.appendPlainText(message)

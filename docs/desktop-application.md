@@ -31,12 +31,18 @@ session directories.
 
 Mouse-wheel zoom and drag pan are native to every graph. Choose a time window,
 pause only the display, toggle curves, inspect the crosshair, export PNG/SVG/CSV,
-or double-click/press **Expand / restore**. All graphs share time. Recorded data
-remain full-rate even when the display is downsampled or paused.
+or double-click/press **Expand / restore**. Scroll vertically to inspect the
+five readable compact graphs. All graphs share time. F↑ and A↑ denote fixed
+and adaptive contraction starts; release events use dashed lines and full event
+names are available as tooltips. Recorded data remain full-rate even when the
+display is downsampled or paused.
 
 The 3D view is a single 30 FPS cuboid. Select mounting orientation, reset the
 relative attitude or disable rendering. Roll and pitch use accel/gyro fusion;
-yaw is relative and drifts because MPU6050 has no magnetometer.
+yaw is relative and drifts because MPU6050 has no magnetometer. For calibrated
+roll/pitch, press **Начать / повторить калибровку**, follow all stationary
+level/side/nose/upside-down prompts, and press **Захватить положение** at each
+step. Changing Mounting invalidates the desktop calibration intentionally.
 
 ## Computer Control safety
 

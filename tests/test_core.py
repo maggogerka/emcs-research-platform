@@ -7,12 +7,13 @@ import unittest
 from unittest.mock import patch
 
 import pandas as pd
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QCoreApplication, QSettings
 
 from analysis.metrics import PhaseInterval, detector_metrics, label_by_markers
 from analysis.reporting import create_all_figures, write_html_report
 from desktop_app.control import MouseMapper
-from desktop_app.experiment import ExperimentSchedule, ProtocolConfig
+from desktop_app.experiment import ExperimentController, ExperimentSchedule, ProtocolConfig
+from desktop_app.orientation import SixPoseCalibration
 from desktop_app.protocol import (
     CRC, FRAME_MAGIC, FRAME_PHASE_MARKER, FRAME_VERSION, HEADER, PHASE_MARKER,
     FrameParser, crc16_ccitt, decode_frame,
@@ -43,6 +44,25 @@ class ScheduleTests(unittest.TestCase):
         counts = first.intensity_counts()
         self.assertLessEqual(max(counts.values()) - min(counts.values()), 1)
         self.assertEqual(len(first.phases), 93)
+
+    def test_calibrated_short_protocol_reaches_completed(self) -> None:
+        app = QCoreApplication.instance() or QCoreApplication([])
+        self.assertIsNotNone(app)
+        now = [0.0]
+        controller = ExperimentController(clock=lambda: now[0])
+        phases: list[str] = []
+        outcomes: list[str] = []
+        controller.phase_changed.connect(lambda value: phases.append(str(value["phase"])))
+        controller.finished.connect(outcomes.append)
+        controller.arm(ProtocolConfig(1, 0.5, 0.5, 0.5, 1))
+        self.assertTrue(controller.calibration_done())
+        for _ in range(3):
+            now[0] += 0.51
+            controller._tick()
+        self.assertEqual(phases, ["calibration_rest", "prepare", "contract", "rest"])
+        self.assertEqual(outcomes, ["completed"])
+        self.assertEqual(controller.state, "finished")
+        self.assertEqual(controller.snapshot()["trial"], 1)
 
 
 class MarkerAndMetricTests(unittest.TestCase):
@@ -103,6 +123,34 @@ class SettingsAndMappingTests(unittest.TestCase):
                 SessionRecorder.analysis_command(paths),
                 ("EMCSResearchPlatform.exe", ["--analyze", "session"]),
             )
+
+
+class OrientationCalibrationTests(unittest.TestCase):
+    def test_guided_pose_calibration_corrects_bias_scale_and_gyro(self) -> None:
+        calibrator = SixPoseCalibration()
+        pose_values = (
+            (0.05, -0.02, 1.03),
+            (1.05, -0.02, 0.03),
+            (-0.95, -0.02, 0.03),
+            (0.05, 0.98, 0.03),
+            (0.05, -1.02, 0.03),
+            (0.05, -0.02, -0.97),
+            (0.05, -0.02, 1.03),
+        )
+        result = None
+        for ax, ay, az in pose_values:
+            sample = {
+                "ax": ax, "ay": ay, "az": az,
+                "gx": 0.2, "gy": -0.1, "gz": 0.05,
+            }
+            result = calibrator.capture([sample.copy() for _ in range(calibrator.sample_count)])
+        self.assertIsNotNone(result)
+        corrected = result.apply(
+            {"ax": 0.05, "ay": -0.02, "az": 1.03, "gx": 0.2, "gy": -0.1, "gz": 0.05}
+        )
+        for name, expected in (("ax", 0.0), ("ay", 0.0), ("az", 1.0),
+                               ("gx", 0.0), ("gy", 0.0), ("gz", 0.0)):
+            self.assertAlmostEqual(corrected[name], expected, places=6)
 
 
 class ReportingTests(unittest.TestCase):

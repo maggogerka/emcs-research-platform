@@ -89,7 +89,10 @@ Signals provide linked, zoomable and pannable time axes; 5/10/30/60-second
 windows; pause-display without pausing recording; crosshair values; curve
 visibility; phase/event overlays; expansion; and PNG/SVG/CSV export. Absolute
 AD8232 input and its centered AC diagnostic are never presented as the same
-quantity. Display downsampling does not alter saved samples.
+quantity. Charts are presented as a scrollable stack with a readable minimum
+height. Compact F↑/A↑ event labels identify fixed/adaptive starts; release
+lines remain available without overlapping text. Display downsampling does not
+alter saved samples.
 
 Each experiment creates a unique directory under `data/recordings/` containing
 `samples.csv`, `events.csv`, `metadata.json`, `metrics.json`, `report.html` and
@@ -106,6 +109,12 @@ a 100 kHz bus, the actual recoverable ADS rate must be measured for each build;
 timer gaps and sample indices explicitly expose missed acquisition slots.
 MPU6050 is configured for 100 Hz and its gyroscope bias is estimated from 200
 stationary samples.
+
+The 3D Orientation tab also offers a guided stationary calibration: level,
+left side, right side, nose down, nose up, upside down and a final level
+reference. It estimates residual gyro bias plus per-axis accelerometer offset
+and scale. This improves roll/pitch and the 3D view; yaw remains relative
+because MPU6050 has no magnetometer.
 
 The embedded EMG path performs:
 

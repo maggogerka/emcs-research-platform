@@ -33,6 +33,16 @@ PHASE_BRUSHES = {
     "paused": (240, 180, 40, 45),
 }
 
+EVENT_LABELS = {
+    "fixed:CONTRACTION_START": "F↑",
+    "fixed:CONTRACTION_RELEASE": "F↓",
+    "adaptive:CONTRACTION_START": "A↑",
+    "adaptive:CONTRACTION_RELEASE": "A↓",
+    "system:EMG_CALIBRATION_DONE": "CAL",
+    "system:IMU_CALIBRATION_DONE": "IMU",
+    "system:LEADS_CHANGED": "LO",
+}
+
 
 class ScientificPlot(QWidget):
     """A bounded display buffer; callers remain responsible for lossless recording."""
@@ -49,14 +59,18 @@ class ScientificPlot(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        # Five plots live in a scroll area. A real minimum height prevents the
+        # PlotWidget from being compressed to an unreadable strip.
+        self.setMinimumHeight(300)
         self._paused = False
         self._window_s = 10
         self._data: dict[str, deque[float]] = {
             "time": deque(maxlen=max_points),
             **{name: deque(maxlen=max_points) for name in curves},
         }
-        self._phase_regions: list[pg.LinearRegionItem] = []
-        self._event_lines: list[pg.InfiniteLine] = []
+        self._phase_regions: list[tuple[float, pg.LinearRegionItem]] = []
+        self._event_lines: list[tuple[float, pg.InfiniteLine]] = []
+        self._last_labeled_event_s = float("-inf")
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -94,6 +108,7 @@ class ScientificPlot(QWidget):
         layout.addLayout(controls)
 
         self.plot = pg.PlotWidget(title=title)
+        self.plot.setMinimumHeight(205)
         self.plot.setLabel("bottom", "Device time", units="s")
         self.plot.setLabel("left", y_label)
         self.plot.showGrid(x=True, y=True, alpha=0.2)
@@ -101,6 +116,7 @@ class ScientificPlot(QWidget):
         self.curves: dict[str, pg.PlotDataItem] = {}
         for name, color in curves.items():
             item = self.plot.plot(name=name, pen=pg.mkPen(color, width=1.2))
+            item.setClipToView(True)
             self.curves[name] = item
             action = QAction(name, curves_button.menu(), checkable=True, checked=True)
             action.toggled.connect(item.setVisible)
@@ -124,16 +140,18 @@ class ScientificPlot(QWidget):
         for name in self.curves:
             self._data[name].append(float(values.get(name, np.nan)))
 
-    def refresh(self, max_display_points: int = 4000) -> None:
-        if self._paused or not self._data["time"]:
+    def refresh(self, max_display_points: int = 2000) -> None:
+        if self._paused or not self.isVisible() or not self._data["time"]:
             return
         time_values = np.asarray(self._data["time"], dtype=float)
         first = np.searchsorted(time_values, time_values[-1] - self._window_s)
-        step = max(1, (len(time_values) - first) // max_display_points)
+        visible_count = len(time_values) - first
+        step = max(1, (visible_count + max_display_points - 1) // max_display_points)
         view_time = time_values[first::step]
         for name, curve in self.curves.items():
             curve.setData(view_time, np.asarray(self._data[name], dtype=float)[first::step])
         self.plot.setXRange(max(time_values[0], time_values[-1] - self._window_s), time_values[-1], padding=0)
+        self._prune_annotations(time_values[-1] - 65.0)
 
     def add_phase(self, start_s: float, end_s: float, phase: str) -> None:
         region = pg.LinearRegionItem(
@@ -143,20 +161,53 @@ class ScientificPlot(QWidget):
         )
         region.setZValue(-20)
         self.plot.addItem(region)
-        self._phase_regions.append(region)
+        self._phase_regions.append((end_s, region))
+        self._prune_annotations(end_s - 65.0)
 
     def add_event(self, time_s: float, label: str, color: str = "#ffcc33") -> None:
-        line = pg.InfiniteLine(pos=time_s, angle=90, pen=pg.mkPen(color, width=1), label=label)
+        short_label = EVENT_LABELS.get(label, label[:4].upper())
+        is_release = label.endswith("CONTRACTION_RELEASE")
+        # Keep all event lines, but suppress dense inline labels. The full
+        # event description remains available as a tooltip.
+        show_label = not is_release and time_s - self._last_labeled_event_s >= 0.45
+        if show_label:
+            self._last_labeled_event_s = time_s
+        line = pg.InfiniteLine(
+            pos=time_s,
+            angle=90,
+            pen=pg.mkPen(
+                color,
+                width=1,
+                style=Qt.PenStyle.DashLine if is_release else Qt.PenStyle.SolidLine,
+            ),
+            label=short_label if show_label else None,
+            labelOpts={"position": 0.92, "color": color},
+        )
+        line.setToolTip(label)
         self.plot.addItem(line)
-        self._event_lines.append(line)
+        self._event_lines.append((time_s, line))
+        self._prune_annotations(time_s - 65.0)
+
+    def _prune_annotations(self, cutoff_s: float) -> None:
+        """Bound graphics items to the longest selectable live window."""
+        while self._event_lines and self._event_lines[0][0] < cutoff_s:
+            _, item = self._event_lines.pop(0)
+            self.plot.removeItem(item)
+        while self._phase_regions and self._phase_regions[0][0] < cutoff_s:
+            _, item = self._phase_regions.pop(0)
+            self.plot.removeItem(item)
+
+    def set_expanded(self, expanded: bool, viewport_height: int = 0) -> None:
+        self.setMinimumHeight(max(300, viewport_height - 12) if expanded else 300)
 
     def clear(self) -> None:
         for values in self._data.values():
             values.clear()
-        for item in self._phase_regions + self._event_lines:
+        for _, item in self._phase_regions + self._event_lines:
             self.plot.removeItem(item)
         self._phase_regions.clear()
         self._event_lines.clear()
+        self._last_labeled_event_s = float("-inf")
 
     def _set_paused(self, paused: bool) -> None:
         self._paused = paused
