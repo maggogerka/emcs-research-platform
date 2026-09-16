@@ -1,262 +1,181 @@
-"""Analyze a recorded EMCS CSV and create reproducible 300 dpi figures."""
+"""Analyze a v2 session directory or a compatible legacy EMCS CSV."""
 
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
-import matplotlib
+import numpy as np
+import pandas as pd
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from analysis.metrics import (  # noqa: E402
+    detector_metrics,
+    label_by_markers,
+    legacy_events_and_markers,
+    phase_intervals,
+)
+from analysis.reporting import create_all_figures, write_html_report  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="CSV created by the EMCS desktop application")
-    parser.add_argument("--output", type=Path, default=Path("figures/generated"))
+    parser.add_argument("input", type=Path, help="session directory or legacy CSV")
+    parser.add_argument("--output", type=Path, help="override figure/output directory")
+    parser.add_argument("--bootstrap", type=int, default=2000, help="trial bootstrap iterations")
     return parser.parse_args()
 
 
-def contraction_intervals(data: pd.DataFrame) -> list[tuple[int, int, int, str]]:
-    contract = data[data["phase"] == "contract"]
-    intervals: list[tuple[int, int, int, str]] = []
-    if contract.empty:
-        return intervals
-    for repetition, group in contract.groupby("repetition", sort=True):
-        intervals.append(
-            (
-                int(group["timestamp_us"].min()),
-                int(group["timestamp_us"].max()),
-                int(repetition),
-                str(group["intensity"].iloc[0]),
-            )
-        )
-    return intervals
+def read_source(path: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], Path, Path, Path]:
+    if path.is_dir():
+        samples_path = path / "samples.csv"
+        events_path = path / "events.csv"
+        metadata_path = path / "metadata.json"
+        if not samples_path.exists() or not events_path.exists():
+            raise SystemExit("Session directory must contain samples.csv and events.csv")
+        samples = pd.read_csv(samples_path, low_memory=False)
+        events = pd.read_csv(events_path, low_memory=False)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        return samples, events, metadata, path / "figures", path / "metrics.json", path / "report.html"
+    samples = pd.read_csv(path, low_memory=False)
+    events_path = path.with_name("events.csv")
+    events = pd.read_csv(events_path, low_memory=False) if events_path.exists() else legacy_events_and_markers(samples)
+    output = Path("figures/generated")
+    return samples, events, {}, output, output / "metrics.json", output / "report.html"
 
 
-def detector_metrics(
-    data: pd.DataFrame, event_column: str, intervals: list[tuple[int, int, int, str]]
-) -> dict[str, Any]:
-    event_mask = data[event_column].map(
-        lambda value: str(value).strip().lower() in {"1", "true"}
-    )
-    predicted = data.loc[event_mask, "timestamp_us"].astype(int).tolist()
-    matched_predictions: set[int] = set()
-    latencies_ms: list[float] = []
-    tp = 0
-    for start, end, _, _ in intervals:
-        candidates = [
-            (index, timestamp)
-            for index, timestamp in enumerate(predicted)
-            if index not in matched_predictions and start <= timestamp <= end
-        ]
-        if candidates:
-            index, timestamp = candidates[0]
-            matched_predictions.add(index)
-            tp += 1
-            latencies_ms.append((timestamp - start) / 1000.0)
-    fn = len(intervals) - tp
-    fp = len(predicted) - len(matched_predictions)
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    duration_min = (
-        (data["timestamp_us"].max() - data["timestamp_us"].min()) / 60_000_000.0
-        if len(data) > 1
-        else 0.0
-    )
-    return {
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "false_positives_per_minute": fp / duration_min if duration_min > 0 else None,
-        "recognition_latency_ms_mean": float(np.mean(latencies_ms)) if latencies_ms else None,
-        "recognition_latency_ms_median": float(np.median(latencies_ms)) if latencies_ms else None,
-        "latencies_ms": latencies_ms,
-    }
+def numeric(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    for column in columns:
+        if column in data:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
+    return data
 
 
-def describe_envelope(data: pd.DataFrame) -> dict[str, Any]:
+def envelope_statistics(data: pd.DataFrame) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for name, selector in {
-        "rest": data["phase"].isin(["baseline_rest", "rest"]),
-        "contraction": data["phase"] == "contract",
-    }.items():
-        values = data.loc[selector, "envelope_voltage"].dropna().to_numpy()
-        result[name] = (
-            {
-                "count": int(values.size),
-                "mean_v": float(np.mean(values)),
-                "median_v": float(np.median(values)),
-                "std_v": float(np.std(values)),
-            }
-            if values.size
-            else {"count": 0, "mean_v": None, "median_v": None, "std_v": None}
-        )
+    groups = {
+        "negative_phases": data["phase"].isin(["calibration_rest", "prepare", "rest"]),
+        "contract": data["phase"].eq("contract"),
+    }
+    for name, selector in groups.items():
+        values = pd.to_numeric(data.loc[selector, "envelope_voltage"], errors="coerce").dropna()
+        result[name] = {
+            "count": int(len(values)),
+            "mean_v": float(values.mean()) if len(values) else None,
+            "median_v": float(values.median()) if len(values) else None,
+            "std_v": float(values.std(ddof=0)) if len(values) else None,
+        }
+    by_intensity: dict[str, Any] = {}
+    for intensity, group in data[data["phase"].eq("contract")].groupby("prescribed_intensity"):
+        values = pd.to_numeric(group["envelope_voltage"], errors="coerce").dropna()
+        by_intensity[str(intensity)] = {
+            "count": int(len(values)),
+            "median_v": float(values.median()) if len(values) else None,
+            "iqr_v": float(values.quantile(0.75) - values.quantile(0.25)) if len(values) else None,
+        }
+    result["by_prescribed_intensity"] = by_intensity
     return result
 
 
-def downsample(data: pd.DataFrame, maximum: int = 100_000) -> pd.DataFrame:
-    step = max(1, len(data) // maximum)
-    return data.iloc[::step]
-
-
-def boolean_values(series: pd.Series) -> pd.Series:
-    """Normalize boolean CSV values written as 0/1 or true/false."""
-    return series.map(lambda value: str(value).strip().lower() in {"1", "true"}).astype(int)
-
-
-def create_figures(
-    data: pd.DataFrame,
-    imu_data: pd.DataFrame,
-    output: Path,
-    has_ground_truth: bool,
-) -> list[str]:
-    output.mkdir(parents=True, exist_ok=True)
-    plot_data = downsample(data)
-    time_s = (plot_data["timestamp_us"] - plot_data["timestamp_us"].iloc[0]) / 1_000_000.0
-    files: list[str] = []
-
-    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, constrained_layout=True)
-    axes[0].plot(time_s, plot_data["ads_voltage"], linewidth=0.45, color="#1565c0")
-    axes[0].set_ylabel("AIN0 voltage (V)")
-    axes[0].set_title("Recorded EMG front-end signal")
-    axes[0].grid(alpha=0.25)
-    axes[1].plot(time_s, plot_data["envelope_voltage"], label="RMS envelope", linewidth=0.8)
-    axes[1].plot(time_s, plot_data["adaptive_on_voltage"], label="Adaptive Ton", linewidth=0.8)
-    axes[1].plot(time_s, plot_data["adaptive_off_voltage"], label="Adaptive Toff", linewidth=0.8)
-    axes[1].plot(
-        time_s, plot_data["fixed_on_voltage"], "--", label="Fixed Ton", linewidth=0.7
-    )
-    axes[1].plot(
-        time_s, plot_data["fixed_off_voltage"], "--", label="Fixed Toff", linewidth=0.7
-    )
-    axes[1].set_xlabel("Time (s)")
-    axes[1].set_ylabel("Envelope (V)")
-    axes[1].grid(alpha=0.25)
-    axes[1].legend(ncol=3, fontsize=8)
-    path = output / "emg-signal-and-thresholds.png"
-    fig.savefig(path, dpi=300)
-    plt.close(fig)
-    files.append(str(path))
-
-    imu_columns = ["ax", "ay", "az", "gx", "gy", "gz"]
-    if not imu_data.empty and all(column in imu_data for column in imu_columns):
-        imu_plot_data = downsample(imu_data)
-        imu_time_s = (
-            imu_plot_data["timestamp_us"] - imu_plot_data["timestamp_us"].iloc[0]
-        ) / 1_000_000.0
-        fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, constrained_layout=True)
-        for axis in ("ax", "ay", "az"):
-            axes[0].plot(imu_time_s, imu_plot_data[axis], label=axis, linewidth=0.7)
-        axes[0].set_ylabel("Acceleration (g)")
-        axes[0].grid(alpha=0.25)
-        axes[0].legend()
-        for axis in ("gx", "gy", "gz"):
-            axes[1].plot(imu_time_s, imu_plot_data[axis], label=axis, linewidth=0.7)
-        axes[1].set_xlabel("Time (s)")
-        axes[1].set_ylabel("Angular velocity (deg/s)")
-        axes[1].grid(alpha=0.25)
-        axes[1].legend()
-        path = output / "imu-motion.png"
-        fig.savefig(path, dpi=300)
-        plt.close(fig)
-        files.append(str(path))
-
-    if has_ground_truth:
-        fig, ax = plt.subplots(figsize=(12, 4), constrained_layout=True)
-        ax.step(time_s, plot_data["phase"].eq("contract").astype(int), where="post", label="Label")
-        ax.step(
-            time_s,
-            boolean_values(plot_data["fixed_active"]) + 1.2,
-            where="post",
-            label="Fixed detector",
-        )
-        ax.step(
-            time_s,
-            boolean_values(plot_data["adaptive_active"]) + 2.4,
-            where="post",
-            label="Adaptive detector",
-        )
-        ax.set_yticks([0.5, 1.7, 2.9], ["Ground truth", "Fixed", "Adaptive"])
-        ax.set_xlabel("Time (s)")
-        ax.set_title("Detector comparison")
-        ax.grid(alpha=0.25)
-        path = output / "detector-comparison.png"
-        fig.savefig(path, dpi=300)
-        plt.close(fig)
-        files.append(str(path))
-    return files
+def sampling_metrics(data: pd.DataFrame, kind: str, index_column: str, gap_column: str) -> dict[str, Any]:
+    if data.empty:
+        return {"samples": 0, "rate_hz": None, "index_gaps": 0}
+    timestamps = pd.to_numeric(data["timestamp_us"], errors="coerce").dropna().astype(np.int64)
+    span_s = (timestamps.iloc[-1] - timestamps.iloc[0]) / 1_000_000.0 if len(timestamps) > 1 else 0.0
+    indices = pd.to_numeric(
+        data[index_column] if index_column in data else pd.Series(dtype=float), errors="coerce"
+    ).dropna()
+    gaps = int(np.maximum(indices.diff().fillna(1).to_numpy() - 1, 0).sum()) if len(indices) else 0
+    reported = pd.to_numeric(
+        data[gap_column] if gap_column in data else pd.Series(1, index=data.index), errors="coerce"
+    ).fillna(1)
+    return {
+        "samples": int(len(data)),
+        "span_s": span_s,
+        "rate_hz": (len(timestamps) - 1) / span_s if span_s > 0 else None,
+        "index_gaps": gaps,
+        "timer_gaps": int(np.maximum(reported.to_numpy() - 1, 0).sum()),
+        "stream": kind,
+    }
 
 
 def main() -> int:
     args = parse_args()
-    all_data = pd.read_csv(args.input)
-    required = {
-        "timestamp_us",
-        "ads_voltage",
-        "envelope_voltage",
-        "adaptive_on_voltage",
-        "adaptive_off_voltage",
-        "fixed_on_voltage",
-        "fixed_off_voltage",
-        "fixed_event",
-        "adaptive_event",
-        "phase",
-        "repetition",
-        "intensity",
-    }
-    missing = sorted(required - set(all_data.columns))
+    samples, events, metadata, default_figures, metrics_path, report_path = read_source(args.input)
+    if samples.empty:
+        raise SystemExit("The recording contains no samples")
+    required = {"record_type", "timestamp_us"}
+    missing = sorted(required - set(samples.columns))
     if missing:
-        raise SystemExit(f"Missing required CSV columns: {', '.join(missing)}")
-    if all_data.empty:
-        raise SystemExit("The CSV contains no samples.")
-
-    if "record_type" in all_data.columns:
-        data = all_data[all_data["record_type"] == "emg"].copy()
-        imu_data = all_data[all_data["record_type"] == "imu"].copy()
-    else:
-        data = all_data
-        imu_data = all_data
-    if data.empty:
-        raise SystemExit("The CSV contains no EMG samples.")
-
-    intervals = contraction_intervals(data)
-    has_ground_truth = bool(intervals)
+        # v1 files before record_type stored an EMG row with a repeated latest IMU sample.
+        if missing == ["record_type"] and "ads_voltage" in samples:
+            samples["record_type"] = "emg"
+        else:
+            raise SystemExit(f"Missing required sample columns: {', '.join(missing)}")
+    samples = numeric(
+        samples,
+        [
+            "timestamp_us", "ads_voltage", "ac_voltage", "envelope_voltage",
+            "adaptive_on_voltage", "adaptive_off_voltage", "fixed_on_voltage",
+            "fixed_off_voltage", "ax", "ay", "az", "gx", "gy", "gz",
+        ],
+    )
+    emg = samples[samples["record_type"].eq("emg")].copy()
+    imu = samples[samples["record_type"].eq("imu")].copy()
+    if emg.empty:
+        raise SystemExit("The recording contains no EMG samples")
+    if "ac_voltage" not in emg or emg["ac_voltage"].isna().all():
+        # Compatibility-only desktop estimate; firmware envelope remains authoritative.
+        baseline = emg["ads_voltage"].ewm(alpha=0.001162, adjust=False).mean()
+        emg["ac_voltage"] = emg["ads_voltage"] - baseline
+    emg = label_by_markers(emg, events)
+    imu = label_by_markers(imu, events)
+    end_timestamp = int(max(emg["timestamp_us"].max(), imu["timestamp_us"].max() if not imu.empty else 0))
+    intervals = phase_intervals(events, end_timestamp)
+    has_ground_truth = any(interval.phase == "contract" for interval in intervals)
+    seed = int(metadata.get("protocol", {}).get("seed", 0) or 0)
     results: dict[str, Any] = {
         "source": str(args.input),
-        "samples": int(len(data)),
-        "imu_samples": int(len(imu_data)),
-        "duration_s": float(
-            (data["timestamp_us"].max() - data["timestamp_us"].min()) / 1_000_000.0
-        ),
+        "session_id": metadata.get("session_id"),
+        "session_outcome": metadata.get("outcome", "unknown"),
         "ground_truth_available": has_ground_truth,
-        "envelope": describe_envelope(data),
+        "ground_truth_source": "device phase markers" if intervals else "none",
+        "sampling": {
+            "emg": sampling_metrics(emg, "emg", "sample_index", "emg_timer_gap"),
+            "imu": sampling_metrics(imu, "imu", "imu_sample_index", "imu_timer_gap"),
+        },
+        "envelope": envelope_statistics(emg),
     }
     if has_ground_truth:
-        results["fixed_detector"] = detector_metrics(data, "fixed_event", intervals)
-        results["adaptive_detector"] = detector_metrics(data, "adaptive_event", intervals)
+        results["fixed_detector"] = detector_metrics(
+            events, intervals, "fixed", seed=seed, bootstrap_iterations=args.bootstrap
+        )
+        results["adaptive_detector"] = detector_metrics(
+            events, intervals, "adaptive", seed=seed, bootstrap_iterations=args.bootstrap
+        )
     else:
         results["metrics_note"] = (
-            "No experimental phase labels are present; TP/FP/FN and detector performance "
-            "were not calculated."
+            "No device-timestamped contract markers are present; TP/FP/FN and "
+            "detector performance were not calculated."
         )
-
-    figures = create_figures(data, imu_data, args.output, has_ground_truth)
-    results["figures"] = figures
-    args.output.mkdir(parents=True, exist_ok=True)
-    metrics_path = args.output / "metrics.json"
-    metrics_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    print(json.dumps(results, indent=2))
+    figures_dir = args.output or default_figures
+    if args.output is not None:
+        metrics_path = figures_dir / "metrics.json"
+        report_path = figures_dir / "report.html"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    figure_paths = create_all_figures(emg, imu, events, intervals, results, figures_dir)
+    results["figures"] = [str(path) for path in figure_paths]
+    metrics_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_html_report(report_path, results, metadata, figure_paths)
+    print(json.dumps(results, indent=2, ensure_ascii=False))
     print(f"Metrics: {metrics_path}")
+    print(f"Report: {report_path}")
     return 0
 
 
