@@ -43,11 +43,13 @@ def label_by_markers(data: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
     """Label arbitrary device timestamps from the latest preceding hardware marker."""
     result = data.copy()
     markers = marker_rows(events)
-    for column, default in (
-        ("phase", ""), ("trial", 0), ("prescribed_intensity", "")
-    ):
+    for column in ("phase", "prescribed_intensity"):
         if column not in result:
-            result[column] = default
+            result[column] = pd.Series("", index=result.index, dtype=object)
+        else:
+            result[column] = result[column].fillna("").astype(str)
+    if "trial" not in result:
+        result["trial"] = 0
     if result.empty or markers.empty:
         return result
     timestamps = pd.to_numeric(result["timestamp_us"], errors="coerce").to_numpy()
@@ -224,10 +226,16 @@ def legacy_events_and_markers(samples: pd.DataFrame) -> pd.DataFrame:
     previous: tuple[str, int, str] | None = None
     marker_id = 0
     for _, row in samples.sort_values("timestamp_us").iterrows():
+        phase_value = row.get("phase", "")
+        intensity_value = row.get("intensity", "")
+        repetition_value = row.get("repetition", 0)
+        phase = "" if pd.isna(phase_value) else str(phase_value).strip()
+        intensity = "" if pd.isna(intensity_value) else str(intensity_value).strip()
+        trial = 0 if pd.isna(repetition_value) else int(float(repetition_value or 0))
         label = (
-            str(row.get("phase", "") or ""),
-            int(float(row.get("repetition", 0) or 0)),
-            str(row.get("intensity", "") or ""),
+            phase,
+            trial,
+            intensity,
         )
         if label[0] and label != previous:
             marker_id += 1

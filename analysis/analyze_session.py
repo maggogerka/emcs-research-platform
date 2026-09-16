@@ -145,7 +145,10 @@ def main() -> int:
         "session_id": metadata.get("session_id"),
         "session_outcome": metadata.get("outcome", "unknown"),
         "ground_truth_available": has_ground_truth,
-        "ground_truth_source": "device phase markers" if intervals else "none",
+        "ground_truth_source": (
+            "legacy CSV phase labels" if has_ground_truth and args.input.is_file()
+            else "device phase markers" if has_ground_truth else "none"
+        ),
         "sampling": {
             "emg": sampling_metrics(emg, "emg", "sample_index", "emg_timer_gap"),
             "imu": sampling_metrics(imu, "imu", "imu_sample_index", "imu_timer_gap"),

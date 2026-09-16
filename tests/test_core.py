@@ -9,6 +9,7 @@ import pandas as pd
 from PySide6.QtCore import QSettings
 
 from analysis.metrics import PhaseInterval, detector_metrics, label_by_markers
+from analysis.reporting import create_all_figures, write_html_report
 from desktop_app.control import MouseMapper
 from desktop_app.experiment import ExperimentSchedule, ProtocolConfig
 from desktop_app.protocol import (
@@ -88,6 +89,36 @@ class SettingsAndMappingTests(unittest.TestCase):
         self.assertLessEqual((vx * vx + vy * vy) ** 0.5, 500.0001)
         mapper.reset()
         self.assertEqual(mapper.displacement({"gx": 0, "gy": 0, "gz": 0}, settings, 0.01), (0, 0))
+
+
+class ReportingTests(unittest.TestCase):
+    def test_complete_marker_session_creates_ten_png_svg_pairs_and_html(self) -> None:
+        timestamps = list(range(0, 4_000_000, 40_000))
+        emg = pd.DataFrame({
+            "timestamp_us": timestamps,
+            "ads_voltage": [1.5 + (index % 10) * 0.001 for index in range(len(timestamps))],
+            "ac_voltage": [(index % 10 - 5) * 0.001 for index in range(len(timestamps))],
+            "envelope_voltage": [0.01 + (0.08 if 25 <= index < 75 else 0) for index in range(len(timestamps))],
+            "fixed_on_voltage": [0.05] * len(timestamps), "adaptive_on_voltage": [0.06] * len(timestamps),
+            "phase": ["prepare" if value < 1_000_000 else "contract" if value < 3_000_000 else "rest" for value in timestamps],
+            "prescribed_intensity": ["weak"] * len(timestamps),
+        })
+        imu = pd.DataFrame({"timestamp_us": timestamps, **{name: [0.0] * len(timestamps) for name in ("ax", "ay", "gx", "gy", "gz")}, "az": [1.0] * len(timestamps)})
+        events = pd.DataFrame([
+            {"device_timestamp_us": 1_250_000, "event_type": "CONTRACTION_START", "detector": "fixed"},
+            {"device_timestamp_us": 1_300_000, "event_type": "CONTRACTION_START", "detector": "adaptive"},
+        ])
+        intervals = [PhaseInterval(0, 1_000_000, "prepare", 1, "weak"), PhaseInterval(1_000_000, 3_000_000, "contract", 1, "weak"), PhaseInterval(3_000_000, 4_000_000, "rest", 1, "weak")]
+        fixed = detector_metrics(events, intervals, "fixed", bootstrap_iterations=20)
+        adaptive = detector_metrics(events, intervals, "adaptive", bootstrap_iterations=20)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            paths = create_all_figures(emg, imu, events, intervals, {"fixed_detector": fixed, "adaptive_detector": adaptive}, output)
+            self.assertEqual(len(paths), 20)
+            self.assertTrue(all(path.exists() for path in paths))
+            report = output / "report.html"
+            write_html_report(report, {"fixed_detector": fixed, "adaptive_detector": adaptive}, {}, paths)
+            self.assertIn("Cue-to-detection", report.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
