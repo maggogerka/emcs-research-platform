@@ -1,293 +1,217 @@
-"""PySide6 desktop interface for EMCS acquisition and experiments."""
+"""Seven-tab PySide6 desktop application for EMSU acquisition and experiments."""
 
 from __future__ import annotations
 
-from collections import deque
-import csv
-from datetime import datetime
+from dataclasses import asdict
+import json
 from pathlib import Path
+import subprocess
 import sys
+import time
 from typing import Any
 
-import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QDoubleSpinBox,
-    QFileDialog,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QMessageBox,
-    QPlainTextEdit,
-    QProgressBar,
-    QPushButton,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+    QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 from serial.tools import list_ports
 
-from .experiment import ExperimentController
-from .protocol import ADS_VOLTS_PER_BIT
+from .control import GlobalEmergencyHotkey, MouseMapper, SendInputBackend
+from .experiment import ExperimentController, ProtocolConfig
+from .orientation import OrientationPanel
+from .panels import ControlPanel, ExperimentPanel, ResultsPanel, StatusStrip
+from .plots import ScientificPlot
+from .protocol import ADS_VOLTS_PER_BIT, INTENSITY_CODES, PHASE_CODES
 from .serial_worker import SerialWorker
+from .session import SessionPaths, SessionRecorder
+from .settings import AlgorithmSettings, SettingsStore, TOOLTIPS
+from .version import APP_NAME, APP_VERSION
 
 
-CSV_FIELDS = [
-    "record_type",
-    "timestamp_us",
-    "sample_index",
-    "emg_timer_gap",
-    "imu_sample_index",
-    "imu_timer_gap",
-    "ads_raw",
-    "ads_voltage",
-    "envelope_raw",
-    "envelope_voltage",
-    "adaptive_on_voltage",
-    "adaptive_off_voltage",
-    "fixed_on_voltage",
-    "fixed_off_voltage",
-    "detector_state",
-    "leads",
-    "lo_minus",
-    "lo_plus",
-    "motion",
-    "fixed_active",
-    "adaptive_active",
-    "fixed_event",
-    "adaptive_event",
-    "fixed_release",
-    "adaptive_release",
-    "ax",
-    "ay",
-    "az",
-    "gx",
-    "gy",
-    "gz",
-    "phase",
-    "repetition",
-    "intensity",
-    "on_coefficient",
-    "off_coefficient",
-    "motion_gyro_dps",
-    "motion_accel_delta_g",
-]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("EMCS Research Platform")
-        self.resize(1400, 950)
-
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
+        self.resize(1500, 960)
         self.worker: SerialWorker | None = None
-        self.csv_file = None
-        self.csv_writer: csv.DictWriter | None = None
-        self.recording_path: Path | None = None
-        self.latest_imu = {key: float("nan") for key in ("ax", "ay", "az", "gx", "gy", "gz")}
+        self.recorder = SessionRecorder(PROJECT_ROOT)
         self.latest_status: dict[str, Any] = {}
+        self.transport = {"crc_errors": 0, "sequence_gaps": 0, "discarded_bytes": 0}
         self.time_origin_us: int | None = None
-
-        self.emg_time: deque[float] = deque(maxlen=8600)
-        self.emg_raw: deque[float] = deque(maxlen=8600)
-        self.emg_envelope: deque[float] = deque(maxlen=8600)
-        self.adaptive_on: deque[float] = deque(maxlen=8600)
-        self.adaptive_off: deque[float] = deque(maxlen=8600)
-        self.fixed_on: deque[float] = deque(maxlen=8600)
-        self.fixed_off: deque[float] = deque(maxlen=8600)
-        self.imu_time: deque[float] = deque(maxlen=1000)
-        self.imu_values = {
-            name: deque(maxlen=1000) for name in ("ax", "ay", "az", "gx", "gy", "gz")
-        }
+        self.last_emg_host = 0.0
+        self.last_imu_host = 0.0
+        self.latest_imu = {name: 0.0 for name in ("ax", "ay", "az", "gx", "gy", "gz")}
+        self.latest_imu_timestamp: int | None = None
+        self.ac_baseline: float | None = None
+        self.marker_id = 0
+        self.last_marker: dict[str, Any] | None = None
+        self.last_device_timestamp_us = 0
+        self.control_active = False
+        self.mouse_mapper = MouseMapper()
+        self.input_backend = SendInputBackend()
+        self.settings_store = SettingsStore()
+        self.analysis_process: QProcess | None = None
 
         self.experiment = ExperimentController(self)
         self.experiment.phase_changed.connect(self._on_phase_changed)
-        self.experiment.progress_changed.connect(self._on_experiment_progress)
-        self.experiment.finished.connect(self._on_experiment_finished)
+        self.experiment.progress_changed.connect(self.experiment_panel_update)
+        self.experiment.finished.connect(self._finish_experiment)
 
         self._build_ui()
+        self._wire_ui()
         self._refresh_ports()
+
+        self.hotkey = GlobalEmergencyHotkey()
+        self.hotkey.activated.connect(lambda: self._disable_control("F12 emergency stop"))
+        QApplication.instance().installNativeEventFilter(self.hotkey)
+        registered = self.hotkey.register()
+        self._log(f"Global F12 emergency stop: {'registered' if registered else 'unavailable'}")
 
         self.plot_timer = QTimer(self)
         self.plot_timer.setInterval(50)
-        self.plot_timer.timeout.connect(self._update_plots)
+        self.plot_timer.timeout.connect(self._refresh_plots)
         self.plot_timer.start()
-
         self.status_timer = QTimer(self)
-        self.status_timer.setInterval(1000)
-        self.status_timer.timeout.connect(self._request_status)
+        self.status_timer.setInterval(100)
+        self.status_timer.timeout.connect(self._safety_tick)
         self.status_timer.start()
 
     def _build_ui(self) -> None:
         central = QWidget()
         root = QVBoxLayout(central)
-        root.addWidget(self._connection_group())
-        root.addWidget(self._status_group())
-        root.addWidget(self._control_group())
-
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        self.raw_plot = pg.PlotWidget(title="Raw EMG (ADS1115 AIN0-GND)")
-        self.raw_curve = self.raw_plot.plot(pen=pg.mkPen("#4FC3F7", width=1))
-        self.raw_plot.setLabel("left", "Voltage", units="V")
-        self.raw_plot.setLabel("bottom", "Time", units="s")
-
-        self.envelope_plot = pg.PlotWidget(title="RMS envelope and thresholds")
-        self.envelope_curve = self.envelope_plot.plot(
-            pen=pg.mkPen("#FFFFFF", width=1.5), name="Envelope"
-        )
-        self.adaptive_on_curve = self.envelope_plot.plot(
-            pen=pg.mkPen("#F44336", width=1.2), name="Adaptive Ton"
-        )
-        self.adaptive_off_curve = self.envelope_plot.plot(
-            pen=pg.mkPen("#FF9800", width=1.2), name="Adaptive Toff"
-        )
-        self.fixed_on_curve = self.envelope_plot.plot(
-            pen=pg.mkPen("#AB47BC", width=1, style=Qt.PenStyle.DashLine), name="Fixed Ton"
-        )
-        self.fixed_off_curve = self.envelope_plot.plot(
-            pen=pg.mkPen("#7E57C2", width=1, style=Qt.PenStyle.DashLine), name="Fixed Toff"
-        )
-        self.envelope_plot.addLegend()
-        self.envelope_plot.setLabel("left", "Voltage", units="V")
-        self.envelope_plot.setLabel("bottom", "Time", units="s")
-
-        self.accel_plot = pg.PlotWidget(title="MPU6050 acceleration")
-        self.accel_curves = {
-            axis: self.accel_plot.plot(pen=color, name=axis)
-            for axis, color in zip(("ax", "ay", "az"), ("#EF5350", "#66BB6A", "#42A5F5"))
-        }
-        self.accel_plot.addLegend()
-        self.accel_plot.setLabel("left", "Acceleration", units="g")
-        self.accel_plot.setLabel("bottom", "Time", units="s")
-
-        self.gyro_plot = pg.PlotWidget(title="MPU6050 angular velocity")
-        self.gyro_curves = {
-            axis: self.gyro_plot.plot(pen=color, name=axis)
-            for axis, color in zip(("gx", "gy", "gz"), ("#EF5350", "#66BB6A", "#42A5F5"))
-        }
-        self.gyro_plot.addLegend()
-        self.gyro_plot.setLabel("left", "Angular velocity", units="deg/s")
-        self.gyro_plot.setLabel("bottom", "Time", units="s")
-
-        for plot in (self.raw_plot, self.envelope_plot, self.accel_plot, self.gyro_plot):
-            plot.showGrid(x=True, y=True, alpha=0.2)
-            splitter.addWidget(plot)
-        root.addWidget(splitter, stretch=1)
-
-        self.event_log = QPlainTextEdit()
-        self.event_log.setReadOnly(True)
-        self.event_log.setMaximumBlockCount(300)
-        self.event_log.setMaximumHeight(130)
-        root.addWidget(self.event_log)
+        self.status_strip = StatusStrip()
+        root.addWidget(self.status_strip)
+        self.tabs = QTabWidget()
+        root.addWidget(self.tabs, 1)
         self.setCentralWidget(central)
-        self.statusBar().showMessage("Disconnected")
 
-    def _connection_group(self) -> QGroupBox:
-        group = QGroupBox("Connection")
-        layout = QHBoxLayout(group)
-        self.port_combo = QComboBox()
-        self.refresh_button = QPushButton("Refresh")
+        self.dashboard = self._dashboard_tab()
+        self.experiment_panel = ExperimentPanel()
+        self.signals = self._signals_tab()
+        self.orientation = OrientationPanel()
+        self.control_panel = ControlPanel()
+        self.results_panel = ResultsPanel()
+        self.diagnostics = self._diagnostics_tab()
+        for label, widget in (
+            ("Dashboard", self.dashboard), ("Experiment", self.experiment_panel),
+            ("Signals", self.signals), ("3D Orientation", self.orientation),
+            ("Computer Control", self.control_panel), ("Results", self.results_panel),
+            ("Diagnostics/Settings", self.diagnostics),
+        ):
+            self.tabs.addTab(widget, label)
+
+    def _dashboard_tab(self) -> QWidget:
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        connection = QGroupBox("ESP32-S3 connection"); row = QHBoxLayout(connection)
+        self.port_combo = QComboBox(); self.refresh_ports = QPushButton("Refresh")
         self.connect_button = QPushButton("Connect")
-        self.refresh_button.clicked.connect(self._refresh_ports)
-        self.connect_button.clicked.connect(self._toggle_connection)
-        layout.addWidget(QLabel("Serial port:"))
-        layout.addWidget(self.port_combo)
-        layout.addWidget(self.refresh_button)
-        layout.addWidget(self.connect_button)
-        layout.addStretch()
-        return group
-
-    def _status_group(self) -> QGroupBox:
-        group = QGroupBox("Hardware and detector status")
-        layout = QGridLayout(group)
-        self.status_labels: dict[str, QLabel] = {}
-        entries = (
-            ("ads", "ADS1115"),
-            ("mpu", "MPU6050"),
-            ("leads", "Electrodes"),
-            ("detector", "Detector"),
-            ("motion", "Motion"),
-            ("transport", "Transport"),
+        row.addWidget(QLabel("Port:")); row.addWidget(self.port_combo); row.addWidget(self.refresh_ports)
+        row.addWidget(self.connect_button); row.addStretch()
+        layout.addWidget(connection)
+        values = QGroupBox("Live values"); grid = QFormLayout(values)
+        self.live_emg = QLabel("— V"); self.live_envelope = QLabel("— V")
+        self.live_imu = QLabel("—"); self.live_state = QLabel("Disconnected")
+        grid.addRow("ADS1115 A0 absolute", self.live_emg)
+        grid.addRow("EMG envelope", self.live_envelope)
+        grid.addRow("MPU6050 accel / gyro", self.live_imu)
+        grid.addRow("Detector", self.live_state)
+        layout.addWidget(values)
+        notice = QLabel(
+            "Research prototype only — not a medical device. Participant IDs must be anonymous. "
+            "The application records all samples; graph downsampling affects display only."
         )
-        for column, (key, title) in enumerate(entries):
-            layout.addWidget(QLabel(title + ":"), 0, column)
-            label = QLabel("—")
-            label.setStyleSheet("font-weight: bold")
-            layout.addWidget(label, 1, column)
-            self.status_labels[key] = label
-        return group
+        notice.setWordWrap(True); notice.setStyleSheet("padding:12px;background:#30251d;color:#ffcc80")
+        layout.addWidget(notice); layout.addStretch()
+        return widget
 
-    def _control_group(self) -> QGroupBox:
-        group = QGroupBox("Acquisition and experiment")
-        layout = QGridLayout(group)
-        self.cal_emg_button = QPushButton("Calibrate EMG (10 s rest)")
-        self.cal_imu_button = QPushButton("Calibrate IMU")
-        self.record_button = QPushButton("Start recording")
-        self.experiment_button = QPushButton("Start experiment")
-        self.cal_emg_button.clicked.connect(lambda: self._send("CAL EMG"))
-        self.cal_imu_button.clicked.connect(lambda: self._send("CAL IMU"))
-        self.record_button.clicked.connect(self._toggle_recording)
-        self.experiment_button.clicked.connect(self._toggle_experiment)
+    def _signals_tab(self) -> QWidget:
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        self.raw_plot = ScientificPlot("AD8232 / ADS1115 absolute A0-GND", "Voltage, V", {"absolute": "#4fc3f7"})
+        self.ac_plot = ScientificPlot("Centered AC component (desktop diagnostic)", "Voltage, V", {"ac": "#66bb6a"})
+        self.envelope_plot = ScientificPlot(
+            "Firmware envelope and thresholds", "Voltage, V",
+            {"envelope": "#ffffff", "adaptive_on": "#ef5350", "adaptive_off": "#ff9800",
+             "fixed_on": "#ab47bc", "fixed_off": "#7e57c2"},
+        )
+        self.accel_plot = ScientificPlot("MPU6050 acceleration", "Acceleration, g",
+                                         {"ax": "#ef5350", "ay": "#66bb6a", "az": "#42a5f5"})
+        self.gyro_plot = ScientificPlot("MPU6050 angular velocity", "Angular rate, deg/s",
+                                        {"gx": "#ef5350", "gy": "#66bb6a", "gz": "#42a5f5"})
+        self.all_plots = [self.raw_plot, self.ac_plot, self.envelope_plot, self.accel_plot, self.gyro_plot]
+        for plot in self.all_plots[1:]: plot.link_time_axis(self.raw_plot)
+        self.plot_splitter = QSplitter(Qt.Orientation.Vertical)
+        for plot in self.all_plots: self.plot_splitter.addWidget(plot)
+        layout.addWidget(self.plot_splitter)
+        self._expanded_plot: ScientificPlot | None = None
+        return widget
 
-        self.on_coefficient = QDoubleSpinBox()
-        self.on_coefficient.setRange(1.0, 20.0)
-        self.on_coefficient.setValue(6.0)
-        self.off_coefficient = QDoubleSpinBox()
-        self.off_coefficient.setRange(0.5, 19.0)
-        self.off_coefficient.setValue(3.0)
-        self.motion_gyro = QDoubleSpinBox()
-        self.motion_gyro.setRange(1.0, 500.0)
-        self.motion_gyro.setValue(20.0)
-        self.motion_accel = QDoubleSpinBox()
-        self.motion_accel.setRange(0.01, 5.0)
-        self.motion_accel.setDecimals(2)
-        self.motion_accel.setValue(0.25)
-        self.apply_settings_button = QPushButton("Apply parameters")
-        self.apply_settings_button.clicked.connect(self._apply_parameters)
+    def _diagnostics_tab(self) -> QWidget:
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        algorithm = QGroupBox("Detector and motion-guard parameters"); form = QFormLayout(algorithm)
+        self.on_coefficient = self._parameter(1, 20, 6, TOOLTIPS["on_coefficient"])
+        self.off_coefficient = self._parameter(0.5, 19, 3, TOOLTIPS["off_coefficient"])
+        self.motion_gyro = self._parameter(1, 500, 20, TOOLTIPS["motion_gyro_dps"])
+        self.motion_accel = self._parameter(0.01, 5, 0.25, TOOLTIPS["motion_accel_delta_g"])
+        for label, item in (("Ton coefficient", self.on_coefficient), ("Toff coefficient", self.off_coefficient),
+                            ("Motion gyro, deg/s", self.motion_gyro), ("Motion accel delta, g", self.motion_accel)):
+            form.addRow(label, item)
+        buttons = QHBoxLayout(); self.apply_parameters = QPushButton("Apply to device")
+        self.profile_name = QLineEdit("default"); self.save_profile = QPushButton("Save profile")
+        self.load_profile = QPushButton("Load profile")
+        for item in (self.apply_parameters, QLabel("Profile:"), self.profile_name, self.save_profile, self.load_profile):
+            buttons.addWidget(item)
+        form.addRow(buttons)
+        layout.addWidget(algorithm)
+        self.event_log = QPlainTextEdit(); self.event_log.setReadOnly(True); self.event_log.setMaximumBlockCount(2000)
+        layout.addWidget(self.event_log, 1)
+        return widget
 
-        self.phase_label = QLabel("Experiment: idle")
-        self.experiment_progress = QProgressBar()
-        self.experiment_progress.setRange(0, 1000)
+    @staticmethod
+    def _parameter(minimum: float, maximum: float, value: float, tooltip: str) -> QDoubleSpinBox:
+        item = QDoubleSpinBox(); item.setRange(minimum, maximum); item.setDecimals(3)
+        item.setValue(value); item.setToolTip(tooltip)
+        return item
 
-        layout.addWidget(self.cal_emg_button, 0, 0)
-        layout.addWidget(self.cal_imu_button, 0, 1)
-        layout.addWidget(self.record_button, 0, 2)
-        layout.addWidget(self.experiment_button, 0, 3)
-        layout.addWidget(QLabel("Ton coefficient:"), 1, 0)
-        layout.addWidget(self.on_coefficient, 1, 1)
-        layout.addWidget(QLabel("Toff coefficient:"), 1, 2)
-        layout.addWidget(self.off_coefficient, 1, 3)
-        layout.addWidget(QLabel("Motion gyro (deg/s):"), 2, 0)
-        layout.addWidget(self.motion_gyro, 2, 1)
-        layout.addWidget(QLabel("Motion |Δa| (g):"), 2, 2)
-        layout.addWidget(self.motion_accel, 2, 3)
-        layout.addWidget(self.apply_settings_button, 1, 4, 2, 1)
-        layout.addWidget(self.phase_label, 3, 0, 1, 3)
-        layout.addWidget(self.experiment_progress, 3, 3, 1, 2)
-        return group
+    def _wire_ui(self) -> None:
+        self.refresh_ports.clicked.connect(self._refresh_ports)
+        self.connect_button.clicked.connect(self._toggle_connection)
+        self.experiment_panel.start_requested.connect(self._start_experiment)
+        self.experiment_panel.pause_requested.connect(self._toggle_experiment_pause)
+        self.experiment_panel.abort_requested.connect(lambda: self.experiment.stop("aborted_by_user"))
+        self.control_panel.enable_requested.connect(self._enable_control)
+        self.control_panel.disable_requested.connect(lambda: self._disable_control("disabled by user"))
+        self.control_panel.reset_requested.connect(self.mouse_mapper.reset)
+        self.apply_parameters.clicked.connect(self._apply_algorithm)
+        self.save_profile.clicked.connect(self._save_algorithm_profile)
+        self.load_profile.clicked.connect(self._load_algorithm_profile)
+        for plot in self.all_plots:
+            plot.expand_requested.connect(self._toggle_expand_plot)
 
     def _refresh_ports(self) -> None:
-        current = self.port_combo.currentText() or "COM13"
-        ports = [port.device for port in list_ports.comports()]
+        current = self.port_combo.currentText()
+        ports = [item.device for item in list_ports.comports()]
         if "COM13" not in ports:
             ports.append("COM13")
-        self.port_combo.clear()
-        self.port_combo.addItems(sorted(set(ports)))
-        index = self.port_combo.findText(current)
-        self.port_combo.setCurrentIndex(index if index >= 0 else self.port_combo.findText("COM13"))
+        self.port_combo.clear(); self.port_combo.addItems(sorted(set(ports)))
+        preferred = current if current in ports else "COM13" if "COM13" in ports else ""
+        self.port_combo.setCurrentText(preferred)
 
     def _toggle_connection(self) -> None:
         if self.worker is not None:
-            self.worker.stop()
-            self.connect_button.setEnabled(False)
+            self._disable_control("serial disconnect")
+            self.worker.stop(); self.connect_button.setEnabled(False)
             return
-        port = self.port_combo.currentText()
+        port = self.port_combo.currentText().strip()
+        if not port:
+            QMessageBox.warning(self, "No port", "Select an ESP32-S3 serial port.")
+            return
         self.worker = SerialWorker(port)
         self.worker.connected.connect(self._on_connected)
         self.worker.disconnected.connect(self._on_disconnected)
@@ -295,262 +219,300 @@ class MainWindow(QMainWindow):
         self.worker.emg_received.connect(self._on_emg)
         self.worker.imu_received.connect(self._on_imu)
         self.worker.event_received.connect(self._on_event)
-        self.worker.message_received.connect(self._log)
+        self.worker.marker_received.connect(self._on_marker)
+        self.worker.message_received.connect(lambda message: self._log("DEVICE: " + message))
         self.worker.error_received.connect(self._on_error)
-        self.worker.transport_stats.connect(self._on_transport_stats)
-        self.worker.start()
-        self.connect_button.setEnabled(False)
+        self.worker.transport_stats.connect(self._on_transport)
+        self.worker.start(); self.connect_button.setEnabled(False)
         self.statusBar().showMessage(f"Connecting to {port}…")
 
     def _on_connected(self, port: str) -> None:
-        self.connect_button.setText("Disconnect")
-        self.connect_button.setEnabled(True)
-        self.port_combo.setEnabled(False)
-        self.statusBar().showMessage(f"Connected to {port}")
-        self._log(f"Connected to {port}; waiting for device startup")
+        self.connect_button.setText("Disconnect"); self.connect_button.setEnabled(True)
+        self.port_combo.setEnabled(False); self.status_strip.set_value("esp", port, True)
+        self.statusBar().showMessage(f"Connected to {port}"); self._log(f"Connected to {port}")
 
     def _on_disconnected(self, port: str) -> None:
-        self._close_recording()
-        self.worker = None
-        self.connect_button.setText("Connect")
-        self.connect_button.setEnabled(True)
-        self.port_combo.setEnabled(True)
+        self._disable_control("ESP disconnected")
+        if self.experiment.state in {"waiting_calibration", "running", "paused"}:
+            self.experiment.stop("hardware_error")
+        self.worker = None; self.connect_button.setText("Connect"); self.connect_button.setEnabled(True)
+        self.port_combo.setEnabled(True); self.status_strip.set_value("esp", "disconnected", False)
         self.statusBar().showMessage(f"Disconnected from {port}")
 
-    def _send(self, command: str) -> None:
+    def _send(self, command: str, *, warn: bool = False) -> bool:
         if self.worker is None:
-            QMessageBox.warning(self, "Not connected", "Connect to the ESP32-S3 first.")
-            return
+            if warn: QMessageBox.warning(self, "Not connected", "Connect the ESP32-S3 first.")
+            return False
         self.worker.send_command(command)
+        return True
 
-    def _request_status(self) -> None:
-        if self.worker is not None:
-            self.worker.send_command("STATUS")
+    def _algorithm_settings(self) -> AlgorithmSettings:
+        settings = AlgorithmSettings(self.on_coefficient.value(), self.off_coefficient.value(),
+                                     self.motion_gyro.value(), self.motion_accel.value())
+        settings.validate(); return settings
 
-    def _apply_parameters(self) -> None:
-        if self.on_coefficient.value() <= self.off_coefficient.value():
-            QMessageBox.warning(self, "Invalid thresholds", "Ton coefficient must exceed Toff.")
-            return
-        self._send(
-            f"SET THRESH {self.on_coefficient.value():.3f} {self.off_coefficient.value():.3f}"
-        )
-        self._send(f"SET IMU {self.motion_gyro.value():.3f} {self.motion_accel.value():.3f}")
+    def _apply_algorithm(self) -> None:
+        try: settings = self._algorithm_settings()
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid parameters", str(error)); return
+        self._send(f"SET THRESH {settings.on_coefficient:.3f} {settings.off_coefficient:.3f}", warn=True)
+        self._send(f"SET IMU {settings.motion_gyro_dps:.3f} {settings.motion_accel_delta_g:.3f}")
+
+    def _save_algorithm_profile(self) -> None:
+        try:
+            self.settings_store.save_profile("algorithm", self.profile_name.text(), self._algorithm_settings())
+            self._log(f"Saved algorithm profile: {self.profile_name.text()}")
+        except ValueError as error: QMessageBox.warning(self, "Profile", str(error))
+
+    def _load_algorithm_profile(self) -> None:
+        try: settings = self.settings_store.load_profile("algorithm", self.profile_name.text(), AlgorithmSettings)
+        except (KeyError, ValueError, json.JSONDecodeError) as error:
+            QMessageBox.warning(self, "Profile", f"Cannot load profile: {error}"); return
+        self.on_coefficient.setValue(settings.on_coefficient); self.off_coefficient.setValue(settings.off_coefficient)
+        self.motion_gyro.setValue(settings.motion_gyro_dps); self.motion_accel.setValue(settings.motion_accel_delta_g)
 
     def _on_status(self, status: dict[str, Any]) -> None:
         self.latest_status = status
-        self._set_status("ads", "OK" if status["ads_ok"] else "ERROR", bool(status["ads_ok"]))
-        self._set_status("mpu", "OK" if status["mpu_ok"] else "ERROR", bool(status["mpu_ok"]))
+        self.status_strip.set_value("ads", "OK" if status["ads_ok"] else "ERROR", bool(status["ads_ok"]))
+        self.status_strip.set_value("mpu", "OK" if status["mpu_ok"] else "ERROR", bool(status["mpu_ok"]))
         leads_ok = not status["lo_minus"] and not status["lo_plus"]
-        leads_text = f"LO−={int(status['lo_minus'])}, LO+={int(status['lo_plus'])}"
-        self._set_status("leads", leads_text, leads_ok)
-        self._set_status("detector", status["detector_state_name"], leads_ok)
-        self._set_status("motion", "MOVING" if status["motion"] else "STILL", not status["motion"])
-        self.on_coefficient.setValue(status["on_coefficient"])
-        self.off_coefficient.setValue(status["off_coefficient"])
-        self.motion_gyro.setValue(status["motion_gyro_dps"])
-        self.motion_accel.setValue(status["motion_accel_delta_g"])
+        self.status_strip.set_value("electrodes", f"LO−={int(status['lo_minus'])}, LO+={int(status['lo_plus'])}", leads_ok)
+        calibrated = bool(status["emg_calibrated"]) and not bool(status["imu_calibrating"])
+        self.status_strip.set_value("calibration", "ready" if calibrated else "not ready", calibrated)
+        self.live_state.setText(status["detector_state_name"])
+        if self.control_active and (not status["ads_ok"] or not status["mpu_ok"]):
+            self._disable_control("hardware error")
+        if self.control_active and not leads_ok: self._disable_control("electrode lead-off")
+        if self.control_active and not calibrated: self._disable_control("calibration unavailable")
+        if self.experiment.state in {"waiting_calibration", "running", "paused"}:
+            if not status["ads_ok"] or not status["mpu_ok"]: self.experiment.stop("hardware_error")
+            elif not leads_ok: self.experiment.stop("lead_off")
 
-    def _set_status(self, key: str, text: str, good: bool) -> None:
-        color = "#43A047" if good else "#E53935"
-        self.status_labels[key].setText(text)
-        self.status_labels[key].setStyleSheet(f"font-weight: bold; color: {color}")
+    def _on_transport(self, stats: dict[str, int]) -> None:
+        self.transport = dict(stats)
+        self.status_strip.set_value("crc", str(stats["crc_errors"]), stats["crc_errors"] == 0)
+        self.status_strip.set_value("gaps", str(stats["sequence_gaps"]), stats["sequence_gaps"] == 0)
 
-    def _on_transport_stats(self, stats: dict[str, int]) -> None:
-        good = stats["crc_errors"] == 0 and stats["sequence_gaps"] == 0
-        text = f"CRC {stats['crc_errors']}, gaps {stats['sequence_gaps']}"
-        self._set_status("transport", text, good)
+    def _origin_time(self, timestamp_us: int) -> float:
+        if self.time_origin_us is None: self.time_origin_us = timestamp_us
+        self.last_device_timestamp_us = max(self.last_device_timestamp_us, timestamp_us)
+        return (timestamp_us - self.time_origin_us) / 1_000_000.0
 
     def _on_emg(self, batch: dict[str, Any]) -> None:
-        if not batch["samples"]:
-            return
-        if self.time_origin_us is None:
-            self.time_origin_us = batch["samples"][0]["timestamp_us"]
-        adaptive_on_v = batch["adaptive_on"] * ADS_VOLTS_PER_BIT
-        adaptive_off_v = batch["adaptive_off"] * ADS_VOLTS_PER_BIT
-        fixed_on_v = batch["fixed_on"] * ADS_VOLTS_PER_BIT
-        fixed_off_v = batch["fixed_off"] * ADS_VOLTS_PER_BIT
-
-        rows = []
-        experiment = self.experiment.snapshot()
+        if not batch["samples"]: return
+        self.last_emg_host = time.monotonic()
+        adaptive_on = batch["adaptive_on"] * ADS_VOLTS_PER_BIT
+        adaptive_off = batch["adaptive_off"] * ADS_VOLTS_PER_BIT
+        fixed_on = batch["fixed_on"] * ADS_VOLTS_PER_BIT
+        fixed_off = batch["fixed_off"] * ADS_VOLTS_PER_BIT
+        ac_values: list[float] = []
         for sample in batch["samples"]:
-            time_s = (sample["timestamp_us"] - self.time_origin_us) / 1_000_000.0
-            self.emg_time.append(time_s)
-            self.emg_raw.append(sample["ads_voltage"])
-            self.emg_envelope.append(sample["envelope_voltage"])
-            self.adaptive_on.append(adaptive_on_v)
-            self.adaptive_off.append(adaptive_off_v)
-            self.fixed_on.append(fixed_on_v)
-            self.fixed_off.append(fixed_off_v)
-            if self.csv_writer is not None:
-                rows.append(
-                    {
-                        **sample,
-                        "record_type": "emg",
-                        "emg_timer_gap": sample["timer_gap"],
-                        "adaptive_on_voltage": adaptive_on_v,
-                        "adaptive_off_voltage": adaptive_off_v,
-                        "fixed_on_voltage": fixed_on_v,
-                        "fixed_off_voltage": fixed_off_v,
-                        "detector_state": batch["detector_state_name"],
-                        "leads": batch["leads"],
-                        "lo_minus": int(batch["lo_minus"]),
-                        "lo_plus": int(batch["lo_plus"]),
-                        "motion": int(batch["motion"]),
-                        **self.latest_imu,
-                        **experiment,
-                        "on_coefficient": self.on_coefficient.value(),
-                        "off_coefficient": self.off_coefficient.value(),
-                        "motion_gyro_dps": self.motion_gyro.value(),
-                        "motion_accel_delta_g": self.motion_accel.value(),
-                    }
-                )
-        if rows and self.csv_writer is not None:
-            self.csv_writer.writerows(rows)
-            self.csv_file.flush()
+            voltage = float(sample["ads_voltage"])
+            if self.ac_baseline is None: self.ac_baseline = voltage
+            self.ac_baseline += 0.001162 * (voltage - self.ac_baseline)
+            ac = voltage - self.ac_baseline; ac_values.append(ac)
+            relative = self._origin_time(int(sample["timestamp_us"]))
+            self.raw_plot.append(relative, {"absolute": voltage})
+            self.ac_plot.append(relative, {"ac": ac})
+            self.envelope_plot.append(relative, {"envelope": sample["envelope_voltage"],
+                                      "adaptive_on": adaptive_on, "adaptive_off": adaptive_off,
+                                      "fixed_on": fixed_on, "fixed_off": fixed_off})
+        latest = batch["samples"][-1]
+        self.live_emg.setText(f"{latest['ads_voltage']:.6f} V")
+        self.live_envelope.setText(f"{latest['envelope_voltage']:.6f} V")
+        if self.recorder.active:
+            self.recorder.write_emg(batch, ac_values, asdict(self._algorithm_settings()))
         leads_ok = not batch["lo_minus"] and not batch["lo_plus"]
-        self._set_status(
-            "leads",
-            f"LO−={int(batch['lo_minus'])}, LO+={int(batch['lo_plus'])}",
-            leads_ok,
-        )
-        self._set_status("detector", batch["detector_state_name"], leads_ok)
+        self.status_strip.set_value("electrodes", f"LO−={int(batch['lo_minus'])}, LO+={int(batch['lo_plus'])}", leads_ok)
+        if not leads_ok:
+            if self.control_active: self._disable_control("electrode lead-off")
+            if self.experiment.state in {"waiting_calibration", "running", "paused"}: self.experiment.stop("lead_off")
 
     def _on_imu(self, batch: dict[str, Any]) -> None:
-        if self.time_origin_us is None and batch["samples"]:
-            self.time_origin_us = batch["samples"][0]["timestamp_us"]
-        rows = []
-        experiment = self.experiment.snapshot()
+        if not batch["samples"]: return
+        self.last_imu_host = time.monotonic()
+        algorithm = asdict(self._algorithm_settings())
         for sample in batch["samples"]:
-            self.latest_imu = {key: sample[key] for key in self.latest_imu}
-            time_s = (sample["timestamp_us"] - self.time_origin_us) / 1_000_000.0
-            self.imu_time.append(time_s)
-            for name in self.imu_values:
-                self.imu_values[name].append(sample[name])
-            if self.csv_writer is not None:
-                rows.append(
-                    {
-                        "record_type": "imu",
-                        "timestamp_us": sample["timestamp_us"],
-                        "imu_sample_index": sample["sample_index"],
-                        "imu_timer_gap": sample["timer_gap"],
-                        **{key: sample[key] for key in self.latest_imu},
-                        **experiment,
-                        "on_coefficient": self.on_coefficient.value(),
-                        "off_coefficient": self.off_coefficient.value(),
-                        "motion_gyro_dps": self.motion_gyro.value(),
-                        "motion_accel_delta_g": self.motion_accel.value(),
-                    }
-                )
-        if rows and self.csv_writer is not None:
-            self.csv_writer.writerows(rows)
-            self.csv_file.flush()
+            relative = self._origin_time(int(sample["timestamp_us"]))
+            self.latest_imu = {name: float(sample[name]) for name in self.latest_imu}
+            self.accel_plot.append(relative, {name: sample[name] for name in ("ax", "ay", "az")})
+            self.gyro_plot.append(relative, {name: sample[name] for name in ("gx", "gy", "gz")})
+            dt_s = 0.01 if self.latest_imu_timestamp is None else max(0.001, min(0.1, (sample["timestamp_us"] - self.latest_imu_timestamp) / 1e6))
+            self.latest_imu_timestamp = int(sample["timestamp_us"])
+            self.orientation.update_sample(sample, dt_s)
+            if self.control_active:
+                dx, dy = self.mouse_mapper.displacement(sample, self.control_panel.settings(), dt_s)
+                try: self.input_backend.move(dx, dy)
+                except Exception as error: self._disable_control(f"SendInput error: {error}")
+        self.live_imu.setText(
+            f"a=({self.latest_imu['ax']:.3f}, {self.latest_imu['ay']:.3f}, {self.latest_imu['az']:.3f}) g; "
+            f"ω=({self.latest_imu['gx']:.2f}, {self.latest_imu['gy']:.2f}, {self.latest_imu['gz']:.2f}) deg/s"
+        )
+        if self.recorder.active: self.recorder.write_imu(batch, algorithm)
 
     def _on_event(self, event: dict[str, Any]) -> None:
-        self._log(
-            f"{event['timestamp_us'] / 1e6:.3f}s {event['detector']}: "
-            f"{event['event']} ({event['state']}, envelope={event['envelope_voltage']:.6f} V)"
-        )
+        self._log(f"{event['timestamp_us'] / 1e6:.3f}s {event['detector']} {event['event']}")
+        if self.recorder.active: self.recorder.write_device_event(event)
+        if event["event"] == "EMG_CALIBRATION_DONE":
+            if self.experiment.calibration_done():
+                self._log("Device confirmed EMG_CALIBRATION_DONE; prescribed trials begin")
+        if self.control_active and event["event"] == "CONTRACTION_START":
+            settings = self.control_panel.settings()
+            if event["detector"] == settings.detector:
+                try: self.input_backend.click(settings.action, settings.custom_key)
+                except Exception as error: self._disable_control(f"SendInput error: {error}")
+        if self.time_origin_us is not None:
+            event_time = (event["timestamp_us"] - self.time_origin_us) / 1e6
+            for plot in self.all_plots: plot.add_event(event_time, f"{event['detector']}:{event['event']}")
+
+    def _on_marker(self, marker: dict[str, Any]) -> None:
+        self._log(f"MARKER {marker['marker_id']} {marker['phase']} trial={marker['trial']} prescribed={marker['prescribed_intensity']}")
+        if self.recorder.active: self.recorder.write_marker(marker)
+        if self.time_origin_us is not None and self.last_marker is not None:
+            start_s = (self.last_marker["timestamp_us"] - self.time_origin_us) / 1e6
+            end_s = (marker["timestamp_us"] - self.time_origin_us) / 1e6
+            for plot in self.all_plots: plot.add_phase(start_s, end_s, self.last_marker["phase"])
+        self.last_marker = marker
 
     def _on_error(self, message: str) -> None:
-        self._log("ERROR: " + message)
-        self.statusBar().showMessage(message, 10_000)
+        self._log("ERROR: " + message); self.statusBar().showMessage(message, 10_000)
+        self._disable_control("device error")
+        if self.experiment.state in {"waiting_calibration", "running", "paused"}:
+            self.experiment.stop("hardware_error")
 
-    def _log(self, message: str) -> None:
-        self.event_log.appendPlainText(message)
-
-    def _toggle_recording(self) -> None:
-        if self.csv_writer is None:
-            default_dir = Path(__file__).resolve().parents[1] / "data" / "recordings"
-            default_dir.mkdir(parents=True, exist_ok=True)
-            default_path = default_dir / f"emcs_{datetime.now():%Y%m%d_%H%M%S}.csv"
-            selected, _ = QFileDialog.getSaveFileName(
-                self, "Save EMCS recording", str(default_path), "CSV files (*.csv)"
+    def _start_experiment(self, config: ProtocolConfig, participant_id: str, note: str) -> None:
+        if self.worker is None:
+            QMessageBox.warning(self, "Experiment blocked", "Connect the ESP32-S3 first."); return
+        if self.control_active:
+            QMessageBox.warning(self, "Experiment blocked", "Disable Computer Control first."); return
+        if not self.latest_status.get("ads_ok") or not self.latest_status.get("mpu_ok"):
+            QMessageBox.warning(self, "Experiment blocked", "ADS1115 and MPU6050 must both be healthy."); return
+        if self.latest_status.get("lo_minus") or self.latest_status.get("lo_plus"):
+            QMessageBox.warning(self, "Experiment blocked", "Attach both electrodes (LO−=0, LO+=0)."); return
+        try:
+            config.validate(); algorithm = self._algorithm_settings()
+            paths = self.recorder.start(
+                {"participant_id": participant_id, "session_note": note,
+                 "protocol": asdict(config), "algorithm": asdict(algorithm),
+                 "firmware": {"target": "esp32s3", "protocol_version": 1},
+                 "serial_port": self.port_combo.currentText(),
+                 "prescribed_intensity_note": "weak/medium/strong are instructions, not measured force"}
             )
-            if not selected:
-                return
-            self.csv_file = open(selected, "w", newline="", encoding="utf-8")
-            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=CSV_FIELDS, extrasaction="ignore")
-            self.csv_writer.writeheader()
-            self.recording_path = Path(selected)
-            self.record_button.setText("Stop recording")
-            self._send("RECORD START")
-            self._log(f"Recording to {selected}")
-        else:
-            self._close_recording()
-
-    def _close_recording(self) -> None:
-        if self.csv_file is None:
-            return
-        if self.worker is not None:
-            self.worker.send_command("RECORD STOP")
-        path = self.recording_path
-        self.csv_file.close()
-        self.csv_file = None
-        self.csv_writer = None
-        self.recording_path = None
-        self.record_button.setText("Start recording")
-        self._log(f"Recording saved: {path}")
-
-    def _toggle_experiment(self) -> None:
-        if self.experiment.snapshot()["phase"]:
-            self.experiment.stop()
-            return
-        if self.csv_writer is None:
-            self._toggle_recording()
-            if self.csv_writer is None:
-                return
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "Cannot start session", str(error)); return
+        self.last_marker = None
+        self._send("RECORD START")
+        self.experiment.arm(config)
         self._send("CAL EMG")
-        self.experiment.start()
-        self.experiment_button.setText("Stop experiment")
-        self._log("Experiment started: 10 s baseline followed by 30 contractions")
+        self.experiment_panel.set_running(True)
+        self._log(f"Session started: {paths.root}; waiting for actual EMG_CALIBRATION_DONE")
+
+    def _send_phase_marker(self, phase: str, trial: int, intensity: str) -> None:
+        self.marker_id += 1
+        phase_code = PHASE_CODES[phase]; intensity_code = INTENSITY_CODES.get(intensity, 0)
+        self._send(f"MARK {self.marker_id} {phase_code} {trial} {intensity_code}")
 
     def _on_phase_changed(self, phase: dict[str, Any]) -> None:
-        text = phase["phase"]
-        if phase["repetition"]:
-            text += f" — repetition {phase['repetition']}/30, {phase['intensity']}"
-        self.phase_label.setText("Experiment: " + text)
-        self._log("Phase: " + text)
+        QApplication.beep()
+        self.experiment_panel.update_progress(phase)
+        self._send_phase_marker(str(phase["phase"]), int(phase.get("trial", 0)), str(phase.get("prescribed_intensity", "")))
+        self._log(f"Protocol phase: {phase['phase']}, trial={phase.get('trial', 0)}, prescribed={phase.get('prescribed_intensity', '')}")
 
-    def _on_experiment_progress(self, progress: float) -> None:
-        self.experiment_progress.setValue(round(progress * 1000))
+    def experiment_panel_update(self, snapshot: dict[str, object]) -> None:
+        self.experiment_panel.update_progress(snapshot)
 
-    def _on_experiment_finished(self) -> None:
-        self.phase_label.setText("Experiment: complete")
-        self.experiment_button.setText("Start experiment")
-        self.experiment_progress.setValue(1000)
-        self._log("Experiment complete")
-        self._close_recording()
+    def _toggle_experiment_pause(self) -> None:
+        if self.experiment.state == "running":
+            self.experiment.pause(); self.experiment_panel.pause.setText("Resume")
+        elif self.experiment.state == "paused":
+            self.experiment.resume(); self.experiment_panel.pause.setText("Pause")
 
-    def _update_plots(self) -> None:
-        if self.emg_time:
-            x = np.fromiter(self.emg_time, dtype=float)
-            self.raw_curve.setData(x, np.fromiter(self.emg_raw, dtype=float))
-            self.envelope_curve.setData(x, np.fromiter(self.emg_envelope, dtype=float))
-            self.adaptive_on_curve.setData(x, np.fromiter(self.adaptive_on, dtype=float))
-            self.adaptive_off_curve.setData(x, np.fromiter(self.adaptive_off, dtype=float))
-            self.fixed_on_curve.setData(x, np.fromiter(self.fixed_on, dtype=float))
-            self.fixed_off_curve.setData(x, np.fromiter(self.fixed_off, dtype=float))
-        if self.imu_time:
-            x = np.fromiter(self.imu_time, dtype=float)
-            for axis, curve in self.accel_curves.items():
-                curve.setData(x, np.fromiter(self.imu_values[axis], dtype=float))
-            for axis, curve in self.gyro_curves.items():
-                curve.setData(x, np.fromiter(self.imu_values[axis], dtype=float))
+    def _finish_experiment(self, outcome: str) -> None:
+        snapshot = self.experiment.snapshot()
+        trial = int(snapshot.get("trial", 0)); intensity = str(snapshot.get("prescribed_intensity", ""))
+        self._send_phase_marker(outcome, trial, intensity)
+        self._send("RECORD STOP")
+        self.experiment_panel.set_running(False); self.experiment_panel.pause.setText("Pause")
+        paths = self.recorder.finalize(outcome, transport=self.transport, hardware_status=self.latest_status)
+        self._log(f"Session finalized with outcome={outcome}")
+        if paths is not None: self._run_analysis(paths)
+
+    def _run_analysis(self, paths: SessionPaths) -> None:
+        executable, arguments = SessionRecorder.analysis_command(paths)
+        process = QProcess(self); self.analysis_process = process
+        process.setProgram(executable); process.setArguments(arguments)
+        process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.finished.connect(lambda code, status: self._analysis_finished(paths, code))
+        process.start(); self._log("Offline scientific analysis started")
+
+    def _analysis_finished(self, paths: SessionPaths, exit_code: int) -> None:
+        process = self.analysis_process
+        output = bytes(process.readAllStandardOutput()).decode(errors="replace") if process else ""
+        errors = bytes(process.readAllStandardError()).decode(errors="replace") if process else ""
+        summary = f"Analysis exit code: {exit_code}\n{output}\n{errors}".strip()
+        self.results_panel.show_result(paths.root, paths.report, summary)
+        self.tabs.setCurrentWidget(self.results_panel)
+        self._log(f"Analysis finished with exit code {exit_code}")
+
+    def _enable_control(self) -> None:
+        reason = self._control_block_reason()
+        if reason:
+            self.control_panel.set_enabled_state(False, reason)
+            QMessageBox.warning(self, "Computer Control blocked", reason); return
+        try: self.control_panel.settings().validate()
+        except ValueError as error:
+            QMessageBox.warning(self, "Control settings", str(error)); return
+        self.mouse_mapper.reset(); self.control_active = True
+        self.control_panel.set_enabled_state(True); self._log("Computer Control enabled after countdown")
+
+    def _control_block_reason(self) -> str:
+        now = time.monotonic()
+        if self.worker is None: return "ESP disconnected"
+        if self.recorder.active or self.experiment.state in {"waiting_calibration", "running", "paused"}: return "research session active"
+        if not self.latest_status.get("ads_ok") or not self.latest_status.get("mpu_ok"): return "sensor hardware unavailable"
+        if self.latest_status.get("lo_minus") or self.latest_status.get("lo_plus"): return "electrode lead-off"
+        if not self.latest_status.get("emg_calibrated") or self.latest_status.get("imu_calibrating"): return "calibration unavailable"
+        if now - min(self.last_emg_host, self.last_imu_host) > 0.3: return "data stream stale >300 ms"
+        return ""
+
+    def _disable_control(self, reason: str) -> None:
+        if self.control_active: self._log(f"Computer Control disabled: {reason}")
+        self.control_active = False; self.mouse_mapper.reset()
+        if hasattr(self, "control_panel"): self.control_panel.set_enabled_state(False, reason)
+
+    def _safety_tick(self) -> None:
+        if self.control_active:
+            reason = self._control_block_reason()
+            if reason: self._disable_control(reason)
+        if self.worker is not None and int(time.monotonic() * 10) % 10 == 0: self.worker.send_command("STATUS")
+
+    def _refresh_plots(self) -> None:
+        for plot in self.all_plots: plot.refresh()
+
+    def _toggle_expand_plot(self, target: ScientificPlot) -> None:
+        expanding = self._expanded_plot is None
+        self._expanded_plot = target if expanding else None
+        for plot in self.all_plots: plot.setVisible(not expanding or plot is target)
+
+    def _log(self, message: str) -> None:
+        if hasattr(self, "event_log"): self.event_log.appendPlainText(message)
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        self.experiment.stop(emit_finished=False)
-        self._close_recording()
+        self._disable_control("application closing")
+        self.hotkey.unregister()
+        if self.experiment.state in {"waiting_calibration", "running", "paused"}:
+            self.experiment.stop("aborted_by_user", emit_finished=False)
+            self._send_phase_marker("aborted_by_user", 0, ""); self._send("RECORD STOP")
+            self.recorder.finalize("aborted_by_user", transport=self.transport, hardware_status=self.latest_status)
         if self.worker is not None:
-            self.worker.stop()
-            self.worker.wait(2000)
+            self.worker.stop(); self.worker.wait(2000)
         event.accept()
 
 
 def main() -> int:
-    pg.setConfigOptions(antialias=False, background=QColor("#161A1D"), foreground="w")
+    pg.setConfigOptions(antialias=False, background=QColor("#161a1d"), foreground="w")
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
+    window = MainWindow(); window.show()
     return app.exec()
 
 
