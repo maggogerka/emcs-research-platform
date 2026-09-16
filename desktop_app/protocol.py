@@ -16,6 +16,7 @@ FRAME_IMU_BATCH = 3
 FRAME_EVENT = 4
 FRAME_ERROR = 5
 FRAME_ACK = 6
+FRAME_PHASE_MARKER = 7
 
 ADS_PERIOD_US = 1163
 IMU_PERIOD_US = 10_000
@@ -42,6 +43,22 @@ EVENT_NAMES = {
 
 DETECTOR_NAMES = {0: "fixed", 1: "adaptive", 2: "system"}
 
+PHASE_NAMES = {
+    0: "idle",
+    1: "calibration_rest",
+    2: "prepare",
+    3: "contract",
+    4: "rest",
+    5: "completed",
+    6: "aborted_by_user",
+    7: "lead_off",
+    8: "hardware_error",
+    9: "paused",
+}
+PHASE_CODES = {name: code for code, name in PHASE_NAMES.items()}
+INTENSITY_NAMES = {0: "", 1: "weak", 2: "medium", 3: "strong"}
+INTENSITY_CODES = {name: code for code, name in INTENSITY_NAMES.items()}
+
 HEADER = struct.Struct("<HBBHIQ")
 CRC = struct.Struct("<H")
 STATUS = struct.Struct("<9B5I11f")
@@ -50,6 +67,7 @@ EMG_SAMPLE = struct.Struct("<hfBB")
 IMU_META = struct.Struct("<IHH")
 IMU_SAMPLE = struct.Struct("<hhhhhhB")
 EVENT = struct.Struct("<BBBBf")
+PHASE_MARKER = struct.Struct("<IHBB")
 
 
 def crc16_ccitt(data: bytes | bytearray | memoryview) -> int:
@@ -269,6 +287,21 @@ def decode_event(frame: Frame) -> dict[str, Any]:
     }
 
 
+def decode_phase_marker(frame: Frame) -> dict[str, Any]:
+    if len(frame.payload) != PHASE_MARKER.size:
+        raise ValueError(f"invalid phase-marker payload length: {len(frame.payload)}")
+    marker_id, trial, phase, prescribed_intensity = PHASE_MARKER.unpack(frame.payload)
+    return {
+        "timestamp_us": frame.timestamp_us,
+        "marker_id": marker_id,
+        "trial": trial,
+        "phase": PHASE_NAMES.get(phase, "unknown"),
+        "phase_code": phase,
+        "prescribed_intensity": INTENSITY_NAMES.get(prescribed_intensity, "unknown"),
+        "prescribed_intensity_code": prescribed_intensity,
+    }
+
+
 def decode_frame(frame: Frame) -> tuple[str, Any]:
     if frame.type == FRAME_STATUS:
         return "status", decode_status(frame.payload)
@@ -282,4 +315,6 @@ def decode_frame(frame: Frame) -> tuple[str, Any]:
         return "error", frame.payload.decode("utf-8", errors="replace")
     if frame.type == FRAME_ACK:
         return "ack", frame.payload.decode("utf-8", errors="replace")
+    if frame.type == FRAME_PHASE_MARKER:
+        return "marker", decode_phase_marker(frame)
     return "unknown", frame.payload

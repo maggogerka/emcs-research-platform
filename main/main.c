@@ -76,6 +76,7 @@ enum {
     FRAME_EVENT = 4,
     FRAME_ERROR = 5,
     FRAME_ACK = 6,
+    FRAME_PHASE_MARKER = 7,
 };
 
 enum {
@@ -185,6 +186,13 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved;
     float envelope;
 } event_wire_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t marker_id;
+    uint16_t trial;
+    uint8_t phase;
+    uint8_t prescribed_intensity;
+} phase_marker_wire_t;
 
 typedef struct {
     bool ads1115_found;
@@ -743,7 +751,27 @@ static void handle_command(const char *line)
     } else {
         float first;
         float second;
-        if (sscanf(line, "SET THRESH %f %f", &first, &second) == 2) {
+        unsigned long marker_id;
+        unsigned int phase;
+        unsigned int trial;
+        unsigned int intensity;
+        if (sscanf(line, "MARK %lu %u %u %u", &marker_id, &phase,
+                   &trial, &intensity) == 4) {
+            if (marker_id <= UINT32_MAX && phase <= UINT8_MAX &&
+                trial <= UINT16_MAX && intensity <= UINT8_MAX) {
+                const phase_marker_wire_t marker = {
+                    .marker_id = (uint32_t)marker_id,
+                    .trial = (uint16_t)trial,
+                    .phase = (uint8_t)phase,
+                    .prescribed_intensity = (uint8_t)intensity,
+                };
+                queue_frame(FRAME_PHASE_MARKER,
+                            (uint64_t)esp_timer_get_time(),
+                            &marker, sizeof(marker));
+            } else {
+                queue_text_frame(FRAME_ERROR, "Invalid phase marker");
+            }
+        } else if (sscanf(line, "SET THRESH %f %f", &first, &second) == 2) {
             if (first > second && second > 0.0f && first <= 20.0f) {
                 g_on_coefficient = first;
                 g_off_coefficient = second;
@@ -1215,5 +1243,5 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Ready. Binary stream is stopped; connect the desktop app or send STATUS.");
-    ESP_LOGI(TAG, "Commands: STATUS, STREAM START|STOP, RECORD START|STOP, CAL EMG, CAL IMU, SET THRESH on off, SET IMU gyro accel");
+    ESP_LOGI(TAG, "Commands: STATUS, STREAM START/STOP, RECORD START/STOP, CAL EMG, CAL IMU, MARK id phase trial intensity, SET THRESH on off, SET IMU gyro accel");
 }
