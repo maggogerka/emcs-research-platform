@@ -26,7 +26,7 @@ jobs:
 
   esp-idf-firmware:
     runs-on: ubuntu-latest
-    container: espressif/idf:release-v5.5
+    container: espressif/idf:release-v6.0
     steps:
       - uses: actions/checkout@v4
       - run: idf.py set-target esp32s3

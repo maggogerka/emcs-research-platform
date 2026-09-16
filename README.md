@@ -1,4 +1,4 @@
-# EMCS Research Platform
+# EMCS Research Platform v1.0.0
 
 EMCS Research Platform is an open research implementation of an
 electromyographic control-system acquisition and evaluation pipeline based on
@@ -35,6 +35,8 @@ detectors.
 | All grounds | Common GND | 3.3 V-compatible logic |
 
 Detailed wiring notes are in docs/hardware.md.
+Desktop operation and safety controls are described in
+[docs/desktop-application.md](docs/desktop-application.md).
 
 ## Figure placeholders
 
@@ -76,15 +78,25 @@ On Windows:
     run_ui.bat
 
 The PySide6 interface defaults to COM13. Serial I/O and CRC validation run in a
-dedicated thread. The GUI displays hardware, electrodes, movement and detector
-state; plots raw EMG, RMS envelope, thresholds and all IMU axes; performs
-calibration commands; records CSV; and controls the experiment scenario.
+dedicated thread. The application has seven tabs: Dashboard, Experiment,
+Signals, 3D Orientation, Computer Control, Results and Diagnostics/Settings.
+Persistent indicators expose ESP, ADS1115, MPU6050, electrode, calibration,
+CRC and sequence-gap state on every tab.
 
-Local CSV recordings are saved under data/recordings/ by default and are
-excluded from Git. Typed `emg` and `imu` rows preserve every received native-rate
-sample. They include detector results, lead state, settings and the current
-experiment label, so the two streams can be analyzed without duplicating a
-stale IMU value into every EMG row.
+    python -m desktop_app
+
+Signals provide linked, zoomable and pannable time axes; 5/10/30/60-second
+windows; pause-display without pausing recording; crosshair values; curve
+visibility; phase/event overlays; expansion; and PNG/SVG/CSV export. Absolute
+AD8232 input and its centered AC diagnostic are never presented as the same
+quantity. Display downsampling does not alter saved samples.
+
+Each experiment creates a unique directory under `data/recordings/` containing
+`samples.csv`, `events.csv`, `metadata.json`, `metrics.json`, `report.html` and
+`figures/`. Local recordings are excluded from Git. `samples.csv` preserves
+every received native-rate EMG and IMU sample; `events.csv` separately stores
+detector events and device-timestamped phase markers. Metadata uses only an
+anonymous participant code—never enter a person's name.
 
 ## Recognition algorithm
 
@@ -114,9 +126,12 @@ Adaptation is frozen during contractions, lead-off and strong movement.
 
 ## Experiment protocol
 
-The built-in protocol starts with ten seconds of quiet baseline and continues
-with 30 contractions. Every trial has preparation, contraction and rest phases;
-weak, medium and strong labels cycle across trials. See docs/experiment.md.
+The configurable protocol waits for the firmware's actual
+`EMG_CALIBRATION_DONE` event before trials can start. Every trial has prepare,
+contract-cue and rest phases. Prescribed weak/medium/strong instructions are
+balanced and shuffled reproducibly from a recorded seed; they are not measured
+force. Sessions support pause and explicit terminal outcomes: `completed`,
+`aborted_by_user`, `lead_off` and `hardware_error`. See docs/experiment.md.
 
 Successful algorithm validation requires connected electrodes, both lead-off
 inputs low and a labelled human-subject recording collected under an approved
@@ -129,14 +144,15 @@ Capture without the GUI:
 
     python analysis/capture_session.py --port COM13 --duration 60
 
-Analyze a recorded CSV:
+Analyze a v2 session directory (legacy CSV remains supported):
 
-    python analysis/analyze_session.py data/recordings/session.csv
+    python analysis/analyze_session.py data/recordings/<session-id>
 
-The analysis creates 300 dpi PNG files and metrics.json in figures/generated/.
-For labelled experiments it reports TP, FP, FN, precision, recall, F1, false
-positives per minute, recognition latency, rest/contraction envelope
-statistics, and fixed-versus-adaptive results. Unlabelled data produce
+The analysis creates a local HTML report, JSON metrics and publication-oriented
+300 dpi PNG plus SVG figures. For hardware-marker-labelled experiments it
+reports per-detector TP, FP, FN, precision, recall, F1, false positives per
+minute of negative protocol phases, cue-to-detection latency, per-trial values
+and trial-bootstrap 95% confidence intervals. Unlabelled data produce
 descriptive plots only; the software does not fabricate performance metrics.
 The measured bring-up and 60-second integrity check are documented in
 [docs/verification.md](docs/verification.md).
@@ -148,6 +164,7 @@ The measured bring-up and 60-second integrity check are documented in
 | main/ | ESP-IDF firmware |
 | desktop_app/ | PySide6 acquisition and experiment GUI |
 | analysis/ | Capture, integrity checking and scientific analysis |
+| tests/ | Protocol, scheduler, synchronization, metric, setting and mapping tests |
 | docs/ | Hardware, protocol and experiment documentation |
 | docs/images/ | Labelled locations for future reviewed graphics |
 | data/ | Data policy; local recordings are ignored |
@@ -161,7 +178,11 @@ The measured bring-up and 60-second integrity check are documented in
   placement and population.
 - Lead-off signals indicate connection state but do not quantify contact
   impedance.
-- No medical, safety-critical or autonomous actuation claim is made.
+- MPU6050 yaw is relative and drifts because the sensor has no magnetometer.
+- Windows Computer Control is disabled by default. It is mutually exclusive
+  with research recording and turns off on F12, disconnect, lead-off,
+  calibration/hardware failure or a data age above 300 ms.
+- No medical or safety-critical claim is made.
 
 ## Citation
 
