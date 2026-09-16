@@ -1,8 +1,15 @@
 # PyInstaller specification for the Windows desktop application.
 
-from PyInstaller.utils.hooks import collect_submodules
-
-hiddenimports = collect_submodules("pyqtgraph.exporters") + ["serial.tools.list_ports"]
+hiddenimports = [
+    "pyqtgraph.exporters",
+    "pyqtgraph.exporters.ImageExporter",
+    "pyqtgraph.exporters.SVGExporter",
+    "serial.tools.list_ports",
+    "analysis.analyze_session",
+    "analysis.metrics",
+    "analysis.reporting",
+    "matplotlib.backends.backend_svg",
+]
 
 a = Analysis(
     ["desktop_app/__main__.py"],
@@ -30,4 +37,3 @@ exe = EXE(
     upx=True,
     console=False,
 )
-

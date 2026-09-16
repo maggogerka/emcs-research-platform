@@ -4,6 +4,7 @@ import struct
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 from PySide6.QtCore import QSettings
@@ -17,6 +18,7 @@ from desktop_app.protocol import (
     FrameParser, crc16_ccitt, decode_frame,
 )
 from desktop_app.settings import AlgorithmSettings, ControlSettings, SettingsStore
+from desktop_app.session import SessionPaths, SessionRecorder
 
 
 class ProtocolTests(unittest.TestCase):
@@ -89,6 +91,18 @@ class SettingsAndMappingTests(unittest.TestCase):
         self.assertLessEqual((vx * vx + vy * vy) ** 0.5, 500.0001)
         mapper.reset()
         self.assertEqual(mapper.displacement({"gx": 0, "gy": 0, "gz": 0}, settings, 0.01), (0, 0))
+
+    def test_packaged_analysis_reenters_executable(self) -> None:
+        root = Path("session")
+        paths = SessionPaths(root, root / "samples.csv", root / "events.csv", root / "metadata.json",
+                             root / "metrics.json", root / "report.html", root / "figures")
+        with patch("desktop_app.session.sys.frozen", True, create=True), patch(
+            "desktop_app.session.sys.executable", "EMCSResearchPlatform.exe"
+        ):
+            self.assertEqual(
+                SessionRecorder.analysis_command(paths),
+                ("EMCSResearchPlatform.exe", ["--analyze", "session"]),
+            )
 
 
 class ReportingTests(unittest.TestCase):

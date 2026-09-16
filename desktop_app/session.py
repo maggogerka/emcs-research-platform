@@ -267,5 +267,7 @@ class SessionRecorder:
 
     @staticmethod
     def analysis_command(paths: SessionPaths) -> tuple[str, list[str]]:
+        if getattr(sys, "frozen", False):
+            return sys.executable, ["--analyze", str(paths.root)]
         script = Path(__file__).resolve().parents[1] / "analysis" / "analyze_session.py"
         return sys.executable, [str(script), str(paths.root)]
