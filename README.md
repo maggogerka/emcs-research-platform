@@ -1,4 +1,4 @@
-# EMCS Research Platform v1.0.0
+# EMCS Research Platform v1.0.1
 
 EMCS Research Platform is an open research implementation of an
 electromyographic control-system acquisition and evaluation pipeline based on
@@ -38,18 +38,59 @@ Detailed wiring notes are in docs/hardware.md.
 Desktop operation and safety controls are described in
 [docs/desktop-application.md](docs/desktop-application.md).
 
-## Figure placeholders
+## Project media
 
-The repository does not use invented images. The following visible placeholders
-identify material required for a future paper or release:
+All media below comes from the working project and is stored in
+[`docs/images/`](docs/images/). Click a still image to open its full-resolution
+version.
 
-- **Prototype photograph:** docs/images/device-prototype.jpg
-- **System architecture:** docs/images/system-architecture.png
-- **Electrical schematic:** docs/images/wiring-diagram.png
-- **Electrode placement:** docs/images/electrode-placement.png
-- **GUI screenshot:** docs/images/gui-screenshot.png
-- **Algorithm flowchart:** docs/images/algorithm-flow.png
-- **Reviewed experimental graphs:** docs/images/experimental-results.png
+### Physical prototype
+
+<p align="center">
+  <img src="docs/images/device-prototype.gif" alt="Animated EMCS hardware prototype" width="480">
+</p>
+
+<p align="center">
+  <a href="docs/images/device-prototype.JPG"><img src="docs/images/device-prototype.JPG" alt="EMCS hardware prototype" width="62%"></a>
+</p>
+
+### Architecture, wiring and electrode placement
+
+<p align="center">
+  <a href="docs/images/system-architecture.png"><img src="docs/images/system-architecture.png" alt="System architecture" width="49%"></a>
+  <a href="docs/images/wiring-diagram.png"><img src="docs/images/wiring-diagram.png" alt="Electrical wiring diagram" width="49%"></a>
+</p>
+
+<p align="center">
+  <a href="docs/images/electrode-placement-forearm.png"><img src="docs/images/electrode-placement-forearm.png" alt="Forearm electrode placement" width="49%"></a>
+  <a href="docs/images/algorithm-flow.png"><img src="docs/images/algorithm-flow.png" alt="Recognition algorithm flow" width="49%"></a>
+</p>
+
+### Desktop application
+
+<p align="center">
+  <a href="docs/images/gui-screenshot-dashboard.png"><img src="docs/images/gui-screenshot-dashboard.png" alt="Dashboard tab" width="90%"></a>
+</p>
+
+<p align="center">
+  <a href="docs/images/gui-screenshot-experiment.png"><img src="docs/images/gui-screenshot-experiment.png" alt="Experiment tab" width="49%"></a>
+  <a href="docs/images/gui-screenshot-result.png"><img src="docs/images/gui-screenshot-result.png" alt="Results tab" width="49%"></a>
+</p>
+
+### Real pilot-session results
+
+<p align="center">
+  <a href="docs/images/experimental-results.png"><img src="docs/images/experimental-results.png" alt="Combined descriptive figures from the real pilot recording" width="90%"></a>
+</p>
+
+The underlying reviewed export is available at
+[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
+It contains the complete losslessly compressed sample CSV, a browser-readable
+preview, events, metadata, integrity hashes, HTML report and PNG/SVG figures.
+This real v1.0.0 recording was interrupted before contract phase markers were
+stored, so it is **not** recognition-validation evidence. Metric figures 04–07
+explicitly state that ground truth is unavailable instead of showing invented
+performance values.
 
 ## Firmware build and execution
 
@@ -166,6 +207,11 @@ descriptive plots only; the software does not fabricate performance metrics.
 The measured bring-up and 60-second integrity check are documented in
 [docs/verification.md](docs/verification.md).
 
+A complete reviewed real pilot export is published in
+[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
+See its README before interpreting the figures: the session is useful for raw
+signal and sampling inspection but lacks contract-phase ground truth.
+
 ## Repository structure
 
 | Path | Purpose |
@@ -175,8 +221,8 @@ The measured bring-up and 60-second integrity check are documented in
 | analysis/ | Capture, integrity checking and scientific analysis |
 | tests/ | Protocol, scheduler, synchronization, metric, setting and mapping tests |
 | docs/ | Hardware, protocol and experiment documentation |
-| docs/images/ | Labelled locations for future reviewed graphics |
-| data/ | Data policy; local recordings are ignored |
+| docs/images/ | Reviewed project photographs, diagrams, GUI captures and result figures |
+| data/ | Data policy, ignored local recordings and reviewed anonymous examples |
 | figures/ | Figure policy; generated results are ignored |
 
 ## Limitations

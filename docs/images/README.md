@@ -1,17 +1,21 @@
-# Figure placeholders
+# Reviewed project media
 
-No synthetic or unrelated images are included. Replace these labelled
-placeholders only with reviewed project material:
+This directory contains real project material approved for the repository:
 
-| Subject | Expected file |
+| File | Content |
 |---|---|
-| Prototype photograph | docs/images/device-prototype.jpg |
-| System architecture | docs/images/system-architecture.png |
-| Electrical wiring diagram | docs/images/wiring-diagram.png |
-| Electrode placement | docs/images/electrode-placement.png |
-| Desktop GUI screenshot | docs/images/gui-screenshot.png |
-| Recognition algorithm flow | docs/images/algorithm-flow.png |
-| Reviewed experimental plots | docs/images/experimental-results.png |
+| `device-prototype.JPG` | Physical ESP32-S3/ADS1115/AD8232/MPU6050 prototype |
+| `device-prototype.gif` | Animated prototype demonstration |
+| `system-architecture.png` | System architecture |
+| `wiring-diagram.png` | Electrical wiring diagram |
+| `electrode-placement-forearm.png` | Forearm electrode placement |
+| `algorithm-flow.png` | Detector algorithm flow |
+| `gui-screenshot-dashboard.png` | Live Dashboard |
+| `gui-screenshot-experiment.png` | Running Experiment protocol |
+| `gui-screenshot-result.png` | Results/report view |
+| `experimental-results.png` | Combined real pilot-session figures |
 
-Generated plots produced from local CSV files are written to
-figures/generated/ and are not committed automatically.
+The combined results sheet comes from
+[`data/examples/20260917_001221_25ad4ea0`](../../data/examples/20260917_001221_25ad4ea0/).
+Its recognition-metric panels explicitly report unavailable ground truth; no
+performance values were invented.

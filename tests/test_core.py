@@ -154,6 +154,37 @@ class OrientationCalibrationTests(unittest.TestCase):
 
 
 class ReportingTests(unittest.TestCase):
+    def test_unlabelled_session_creates_explicit_unavailable_metric_figures(self) -> None:
+        timestamps = list(range(0, 400_000, 40_000))
+        emg = pd.DataFrame({
+            "timestamp_us": timestamps,
+            "ads_voltage": [1.5] * len(timestamps),
+            "ac_voltage": [0.0] * len(timestamps),
+            "envelope_voltage": [0.01] * len(timestamps),
+            "fixed_on_voltage": [0.05] * len(timestamps),
+            "adaptive_on_voltage": [0.06] * len(timestamps),
+            "phase": ["calibration_rest"] * len(timestamps),
+            "prescribed_intensity": [""] * len(timestamps),
+        })
+        imu = pd.DataFrame({
+            "timestamp_us": timestamps,
+            **{name: [0.0] * len(timestamps) for name in ("ax", "ay", "gx", "gy", "gz")},
+            "az": [1.0] * len(timestamps),
+        })
+        note = "No device-timestamped contract markers are present."
+        with tempfile.TemporaryDirectory() as directory:
+            paths = create_all_figures(
+                emg, imu, pd.DataFrame(), [], {"metrics_note": note}, Path(directory)
+            )
+            stems = {path.stem for path in paths}
+            for stem in (
+                "04-event-outcome-matrix",
+                "05-precision-recall-f1",
+                "06-false-positives-per-minute",
+                "07-cue-to-detection-latency",
+            ):
+                self.assertIn(stem, stems)
+
     def test_complete_marker_session_creates_ten_png_svg_pairs_and_html(self) -> None:
         timestamps = list(range(0, 4_000_000, 40_000))
         emg = pd.DataFrame({

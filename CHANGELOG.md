@@ -9,6 +9,9 @@
 - Fixed the phase payload key and terminal index boundary that prevented calibrated experiments from advancing and finalizing.
 - Added guided six-face MPU6050 accel/gyro calibration with a final level reference.
 - Smoothed Windows pointer motion by distributing batched IMU data on a precise timer.
+- Published reviewed prototype, architecture, wiring, electrode, GUI and pilot-result media in the project README.
+- Added an anonymized, integrity-checked real pilot export with a lossless full sample archive and browser-readable preview.
+- Generate explicit unavailable panels for metric figures 04-07 when a recording has no contract-phase ground truth.
 
 ## 1.0.0 — 2026-09-16
 

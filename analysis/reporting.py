@@ -168,7 +168,52 @@ def _signal_figures(
 
 def _metric_figures(results: dict[str, Any], directory: Path) -> list[Path]:
     if not all(name in results for name in ("fixed_detector", "adaptive_detector")):
-        return []
+        note = results.get(
+            "metrics_note",
+            "Recognition metrics require device-timestamped contract phase markers.",
+        )
+        paths: list[Path] = []
+        unavailable = (
+            ("04-event-outcome-matrix", "Event outcome matrix"),
+            ("05-precision-recall-f1", "Precision, recall and F1"),
+            ("06-false-positives-per-minute", "False positives per minute"),
+            ("07-cue-to-detection-latency", "Cue-to-detection latency"),
+        )
+        for stem, title in unavailable:
+            figure, axis = plt.subplots(figsize=(9, 4.8))
+            axis.set_axis_off()
+            axis.text(
+                0.5,
+                0.62,
+                title,
+                ha="center",
+                va="center",
+                fontsize=18,
+                fontweight="bold",
+                transform=axis.transAxes,
+            )
+            axis.text(
+                0.5,
+                0.43,
+                "Metric unavailable — no contract-phase ground truth",
+                ha="center",
+                va="center",
+                fontsize=13,
+                color="#9b2226",
+                transform=axis.transAxes,
+            )
+            axis.text(
+                0.5,
+                0.25,
+                note,
+                ha="center",
+                va="center",
+                fontsize=10,
+                wrap=True,
+                transform=axis.transAxes,
+            )
+            paths += _save_pair(figure, directory, stem)
+        return paths
     paths: list[Path] = []
     names = ["fixed_detector", "adaptive_detector"]
     labels = ["Fixed", "Adaptive"]

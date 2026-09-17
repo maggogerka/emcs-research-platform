@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>EMSU scientific session report</title><style>
+body{font:15px system-ui,sans-serif;max-width:1200px;margin:auto;padding:24px;color:#18212b}
+h1,h2{color:#173f5f} table{border-collapse:collapse;width:100%;margin:12px 0 24px}
+th,td{border:1px solid #b9c3cc;padding:7px;text-align:right} th:first-child,td:first-child{text-align:left}
+figure{margin:24px 0} img{max-width:100%;height:auto} code,pre{background:#f2f4f5;padding:3px}
+.notice{padding:12px;border-left:5px solid #e09f3e;background:#fff8e6}
+</style></head><body>
+<h1>EMSU scientific session report</h1>
+<p>Session: <code>20260917_001221_25ad4ea0</code>; outcome:
+<strong>in_progress</strong>.</p>
+<p class="notice">No device-timestamped contract markers are present; TP/FP/FN and detector performance were not calculated. Prescribed weak/medium/strong labels are protocol instructions, not measured force.</p>
+<h2>Sampling integrity</h2><table><thead><tr><th>Stream</th><th>Samples</th><th>Rate, Hz</th>
+<th>Index gaps</th><th>Timer gaps</th></tr></thead><tbody><tr><td>emg</td><td>397568</td><td>843.71</td><td>7605</td><td>423</td></tr><tr><td>imu</td><td>46310</td><td>98.281</td><td>810</td><td>0</td></tr></tbody></table>
+<h2>Detector metrics</h2><table><thead><tr><th>Detector</th><th>TP</th><th>FP</th><th>FN</th>
+<th>Precision</th><th>Recall</th><th>F1</th><th>FP/min</th><th>Cue-to-detection, ms</th><th>Trial bootstrap 95% CI</th>
+</tr></thead><tbody><tr><td colspan="10">No valid contract ground truth.</td></tr></tbody></table>
+<h2>Figures</h2><figure><img src="figures/01-emg-signal-and-thresholds.png"><figcaption>01-emg-signal-and-thresholds</figcaption></figure><figure><img src="figures/03-fixed-adaptive-events.png"><figcaption>03-fixed-adaptive-events</figcaption></figure><figure><img src="figures/04-event-outcome-matrix.png"><figcaption>04-event-outcome-matrix</figcaption></figure><figure><img src="figures/05-precision-recall-f1.png"><figcaption>05-precision-recall-f1</figcaption></figure><figure><img src="figures/06-false-positives-per-minute.png"><figcaption>06-false-positives-per-minute</figcaption></figure><figure><img src="figures/07-cue-to-detection-latency.png"><figcaption>07-cue-to-detection-latency</figcaption></figure><figure><img src="figures/08-envelope-distributions.png"><figcaption>08-envelope-distributions</figcaption></figure><figure><img src="figures/09-imu-motion.png"><figcaption>09-imu-motion</figcaption></figure><figure><img src="figures/10-sampling-intervals-and-gaps.png"><figcaption>10-sampling-intervals-and-gaps</figcaption></figure>
+<h2>Session metadata</h2><pre>{
+  &quot;participant_id&quot;: &quot;P001&quot;,
+  &quot;session_note&quot;: &quot;&quot;,
+  &quot;protocol&quot;: {
+    &quot;repetitions&quot;: 30,
+    &quot;prepare_s&quot;: 3.0,
+    &quot;contract_s&quot;: 2.0,
+    &quot;rest_s&quot;: 3.0,
+    &quot;seed&quot;: 20260916
+  },
+  &quot;algorithm&quot;: {
+    &quot;on_coefficient&quot;: 6.0,
+    &quot;off_coefficient&quot;: 3.0,
+    &quot;motion_gyro_dps&quot;: 20.0,
+    &quot;motion_accel_delta_g&quot;: 0.25
+  },
+  &quot;firmware&quot;: {
+    &quot;target&quot;: &quot;esp32s3&quot;,
+    &quot;protocol_version&quot;: 1
+  },
+  &quot;serial_port&quot;: &quot;COM13&quot;,
+  &quot;prescribed_intensity_note&quot;: &quot;weak/medium/strong are instructions, not measured force&quot;,
+  &quot;session_id&quot;: &quot;20260917_001221_25ad4ea0&quot;,
+  &quot;application_version&quot;: &quot;1.0.0&quot;,
+  &quot;git_commit&quot;: &quot;d791eb479dcd17ed832ae32fa404c7a7beac302a&quot;,
+  &quot;started_utc&quot;: &quot;2026-09-16T21:12:21.946419+00:00&quot;,
+  &quot;outcome&quot;: &quot;in_progress&quot;,
+  &quot;format_version&quot;: 2,
+  &quot;label_source&quot;: &quot;device_phase_markers&quot;
+}</pre>
+<h2>Limitations</h2><p>ADS1115 voltage is not clinical ECG amplitude. MPU6050 yaw is relative and drifts without a magnetometer.
+Event metrics count one first detector start per hardware-marked contraction interval. This software is a research prototype,
+not a medical device.</p></body></html>
