@@ -40,57 +40,78 @@ Desktop operation and safety controls are described in
 
 ## Project media
 
-All media below comes from the working project and is stored in
-[`docs/images/`](docs/images/). Click a still image to open its full-resolution
-version.
+All photographs, diagrams, captures and plots below come from the working
+project. Click any still image to open the original at full resolution.
 
 ### Physical prototype
 
-<p align="center">
-  <img src="docs/images/device-prototype.gif" alt="Animated EMCS hardware prototype" width="480">
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%"><strong>Prototype demonstration</strong><br><img src="docs/images/device-prototype.gif" alt="Animated EMCS hardware prototype" width="400"></td>
+    <td align="center" width="50%"><strong>Assembled hardware</strong><br><a href="docs/images/device-prototype.JPG"><img src="docs/images/device-prototype.JPG" alt="EMCS hardware prototype" width="500"></a></td>
+  </tr>
+</table>
 
-<p align="center">
-  <a href="docs/images/device-prototype.JPG"><img src="docs/images/device-prototype.JPG" alt="EMCS hardware prototype" width="62%"></a>
-</p>
+### Hardware and signal-processing design
 
-### Architecture, wiring and electrode placement
-
-<p align="center">
-  <a href="docs/images/system-architecture.png"><img src="docs/images/system-architecture.png" alt="System architecture" width="49%"></a>
-  <a href="docs/images/wiring-diagram.png"><img src="docs/images/wiring-diagram.png" alt="Electrical wiring diagram" width="49%"></a>
-</p>
-
-<p align="center">
-  <a href="docs/images/electrode-placement-forearm.png"><img src="docs/images/electrode-placement-forearm.png" alt="Forearm electrode placement" width="49%"></a>
-  <a href="docs/images/algorithm-flow.png"><img src="docs/images/algorithm-flow.png" alt="Recognition algorithm flow" width="49%"></a>
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%"><strong>System architecture</strong><br><a href="docs/images/system-architecture.png"><img src="docs/images/system-architecture.png" alt="EMCS system architecture" width="100%"></a></td>
+    <td align="center" width="50%"><strong>Wiring diagram</strong><br><a href="docs/images/wiring-diagram.png"><img src="docs/images/wiring-diagram.png" alt="ESP32-S3 sensor wiring diagram" width="100%"></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><strong>Forearm electrode placement</strong><br><a href="docs/images/electrode-placement-forearm.png"><img src="docs/images/electrode-placement-forearm.png" alt="Forearm electrode placement" width="100%"></a></td>
+    <td align="center" width="50%"><strong>Recognition pipeline</strong><br><a href="docs/images/algorithm-flow.png"><img src="docs/images/algorithm-flow.png" alt="Recognition algorithm flow" width="100%"></a></td>
+  </tr>
+</table>
 
 ### Desktop application
 
 <p align="center">
-  <a href="docs/images/gui-screenshot-dashboard.png"><img src="docs/images/gui-screenshot-dashboard.png" alt="Dashboard tab" width="90%"></a>
+  <strong>Live dashboard</strong><br>
+  <a href="docs/images/gui-screenshot-dashboard.png"><img src="docs/images/gui-screenshot-dashboard.png" alt="EMCS live dashboard" width="92%"></a>
 </p>
+
+<table>
+  <tr>
+    <td align="center" width="50%"><strong>Guided experiment</strong><br><a href="docs/images/gui-screenshot-experiment.png"><img src="docs/images/gui-screenshot-experiment.png" alt="Running EMCS experiment" width="100%"></a></td>
+    <td align="center" width="50%"><strong>Generated results</strong><br><a href="docs/images/gui-screenshot-result.png"><img src="docs/images/gui-screenshot-result.png" alt="EMCS results tab" width="100%"></a></td>
+  </tr>
+</table>
+
+### Completed reference experiment
+
+The repository includes a reviewed, anonymous, real-hardware experiment with
+30 prescribed contractions and device-timestamped phase ground truth:
+[`data/examples/20260917_120607_62173cd4/`](data/examples/20260917_120607_62173cd4/).
+It contains the complete losslessly compressed sample table, CSV preview,
+events, metadata, integrity hashes, portable HTML report and all ten PNG/SVG
+figure pairs.
+
+| Detector | TP | FP | FN | Precision | Recall | F1 | FP/min | Mean cue latency |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Fixed | 27 | 11 | 3 | 0.711 | 0.900 | 0.794 | 3.439 | 597.8 ms |
+| Adaptive | 29 | 11 | 1 | 0.725 | 0.967 | 0.829 | 3.439 | 583.3 ms |
+
+These are single-session prototype results, not clinical or population-level
+performance claims. The complete per-trial values and trial-bootstrap 95%
+confidence intervals are preserved in the linked dataset.
+
+<table>
+  <tr>
+    <td align="center" width="50%"><strong>04 — Event outcome matrix</strong><br><a href="data/examples/20260917_120607_62173cd4/figures/04-event-outcome-matrix.png"><img src="data/examples/20260917_120607_62173cd4/figures/04-event-outcome-matrix.png" alt="Fixed and adaptive detector event outcome matrix" width="100%"></a></td>
+    <td align="center" width="50%"><strong>05 — Precision, recall and F1</strong><br><a href="data/examples/20260917_120607_62173cd4/figures/05-precision-recall-f1.png"><img src="data/examples/20260917_120607_62173cd4/figures/05-precision-recall-f1.png" alt="Fixed and adaptive precision recall and F1" width="100%"></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><strong>06 — False positives per minute</strong><br><a href="data/examples/20260917_120607_62173cd4/figures/06-false-positives-per-minute.png"><img src="data/examples/20260917_120607_62173cd4/figures/06-false-positives-per-minute.png" alt="False positives per negative protocol minute" width="100%"></a></td>
+    <td align="center" width="50%"><strong>07 — Cue-to-detection latency</strong><br><a href="data/examples/20260917_120607_62173cd4/figures/07-cue-to-detection-latency.png"><img src="data/examples/20260917_120607_62173cd4/figures/07-cue-to-detection-latency.png" alt="Cue-to-detection latency with confidence intervals" width="100%"></a></td>
+  </tr>
+</table>
 
 <p align="center">
-  <a href="docs/images/gui-screenshot-experiment.png"><img src="docs/images/gui-screenshot-experiment.png" alt="Experiment tab" width="49%"></a>
-  <a href="docs/images/gui-screenshot-result.png"><img src="docs/images/gui-screenshot-result.png" alt="Results tab" width="49%"></a>
+  <strong>Complete figure collection 01–10</strong><br>
+  <a href="docs/images/experimental-results.png"><img src="docs/images/experimental-results.png" alt="All ten figures from the completed reference experiment" width="92%"></a>
 </p>
-
-### Real pilot-session results
-
-<p align="center">
-  <a href="docs/images/experimental-results.png"><img src="docs/images/experimental-results.png" alt="Combined descriptive figures from the real pilot recording" width="90%"></a>
-</p>
-
-The underlying reviewed export is available at
-[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
-It contains the complete losslessly compressed sample CSV, a browser-readable
-preview, events, metadata, integrity hashes, HTML report and PNG/SVG figures.
-This real v1.0.0 recording was interrupted before contract phase markers were
-stored, so it is **not** recognition-validation evidence. Metric figures 04–07
-explicitly state that ground truth is unavailable instead of showing invented
-performance values.
 
 ## Firmware build and execution
 
@@ -117,6 +138,9 @@ On Windows:
 
     install_ui.bat
     run_ui.bat
+
+A prebuilt Windows executable is also available from
+[GitHub Releases](https://github.com/maggogerka/emcs-research-platform/releases).
 
 The PySide6 interface defaults to COM13. Serial I/O and CRC validation run in a
 dedicated thread. The application has seven tabs: Dashboard, Experiment,
@@ -207,10 +231,10 @@ descriptive plots only; the software does not fabricate performance metrics.
 The measured bring-up and 60-second integrity check are documented in
 [docs/verification.md](docs/verification.md).
 
-A complete reviewed real pilot export is published in
-[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
-See its README before interpreting the figures: the session is useful for raw
-signal and sampling inspection but lacks contract-phase ground truth.
+A complete reviewed reference experiment is published in
+[`data/examples/20260917_120607_62173cd4/`](data/examples/20260917_120607_62173cd4/).
+Its README defines the event matching rules, limitations and exact reproduction
+steps. All detector metrics use device-timestamped contract markers.
 
 ## Repository structure
 

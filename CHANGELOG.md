@@ -11,7 +11,10 @@
 - Smoothed Windows pointer motion by distributing batched IMU data on a precise timer.
 - Published reviewed prototype, architecture, wiring, electrode, GUI and pilot-result media in the project README.
 - Added an anonymized, integrity-checked real pilot export with a lossless full sample archive and browser-readable preview.
-- Generate explicit unavailable panels for metric figures 04-07 when a recording has no contract-phase ground truth.
+- Generated explicit unavailable panels for metric figures 04-07 when a recording has no contract-phase ground truth.
+- Replaced the interrupted public pilot with a completed 30-trial reference experiment and all ten PNG/SVG figure pairs.
+- Added real outcome, precision/recall/F1, false-positive-rate and cue-latency figures to the main README.
+- Added a verified lossless sample archive, browser preview and stable per-artifact SHA-256 manifest for the reference dataset.
 
 ## 1.0.0 — 2026-09-16
 
