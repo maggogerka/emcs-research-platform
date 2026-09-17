@@ -1,14 +1,15 @@
 # Analysis
 
-The capture_session.py tool records the real binary stream without requiring the GUI:
+The capture tool records the real binary stream without requiring the GUI:
 
     python analysis/capture_session.py --port COM13 --duration 60
 
-The analyze_session.py tool processes a CSV produced by the GUI or capture tool and
-writes 300 dpi PNG figures and metrics.json:
+Analyze a v2 session directory:
 
-    python analysis/analyze_session.py data/recordings/session.csv
+    python analysis/analyze_session.py data/recordings/<session-id>
 
-TP, FP, FN, precision, recall, F1 and recognition latency are calculated only
-when the CSV contains experiment phase labels. Unlabelled captures produce
-descriptive plots but no synthetic performance result.
+The analysis generates `metrics.json`, `report.html`, and publication-oriented
+300 dpi PNG plus SVG figures. Legacy CSV is accepted for compatibility. Metrics
+requiring contraction ground truth are omitted unless device-timestamped phase
+markers (or explicit legacy labels) exist; hardware-only data never produce
+invented recognition performance.

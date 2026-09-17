@@ -21,7 +21,7 @@ The parser searches for the magic word and validates both length and CRC, so it
 can recover after a board reset or an incomplete read.
 
 Message types are STATUS (1), EMG_BATCH (2), IMU_BATCH (3), EVENT (4), ERROR
-(5) and ACK (6). EMG batches contain 32 samples; IMU batches contain 10
+(5), ACK (6) and PHASE_MARKER (7). EMG batches contain 32 samples; IMU batches contain 10
 samples. Each sample carries a timer-gap field. Together with frame sequence,
 sample index and dropped counters this permits explicit loss detection rather
 than silent interpolation.
@@ -36,8 +36,17 @@ than silent interpolation.
     RECORD STOP
     CAL EMG
     CAL IMU
+    MARK <marker_id> <phase_code> <trial> <prescribed_intensity_code>
     SET THRESH <Ton coefficient> <Toff coefficient>
     SET IMU <gyro threshold deg/s> <acceleration delta g>
 
 Recording is performed by the desktop application. RECORD START and RECORD
 STOP annotate the firmware stream so saved data retain the device-side state.
+
+`MARK` causes the firmware to emit a packed `<uint32 marker_id, uint16 trial,
+uint8 phase, uint8 prescribed_intensity>` frame with the ESP timer timestamp
+assigned when the command is handled. Phase codes are idle 0, calibration 1,
+prepare 2, contract 3, rest 4, completed 5, aborted-by-user 6, lead-off 7,
+hardware-error 8 and paused 9. Prescribed-intensity codes are none 0, weak 1,
+medium 2 and strong 3. Offline labels always use this device timestamp rather
+than host receive time.

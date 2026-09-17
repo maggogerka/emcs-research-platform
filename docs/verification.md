@@ -41,6 +41,37 @@ and no runtime error flags. The analysis script generated the two 300 dpi
 descriptive figures locally. No recognition metrics were calculated because
 the recording contained no labelled contraction protocol.
 
+## Version 1.0.0 verification
+
+The scientific UI/control branch was rebuilt with ESP-IDF 6.0.2 and flashed to
+the same ESP32-S3 on COM13. The observed startup log again reported devices
+`0x48` and `0x68`, scan `errors=0`, MPU6050 `WHO_AM_I=0x68`, ADS1115 continuous
+860 SPS configuration and successful stationary gyro calibration.
+
+A real command `MARK 4242 2 9 3` returned a CRC-valid hardware frame with the
+device timestamp, marker 4242, `prepare`, trial 9 and prescribed `strong`. An
+additional 60-second acquisition produced:
+
+| Check | Version 1.0.0 result |
+|---|---:|
+| EMG samples | 51,552 |
+| EMG timestamp span | 59.954431 s |
+| Recoverable EMG rate | 859.836 samples/s |
+| EMG index/timer gaps | 1 |
+| MPU6050 samples | 5,990 |
+| MPU6050 rate | 100.000 samples/s |
+| MPU6050 gaps | 0 |
+| Binary-frame sequence gaps | 0 |
+| CRC errors | 0 |
+| Runtime I2C errors | 0 |
+
+The seven-tab GUI was connected offscreen to the real stream: both sensor
+statuses were healthy, stream age was 0.106 s, and CRC/sequence gaps were zero.
+The PyInstaller executable started successfully and its bundled `--analyze`
+mode generated `metrics.json`, `report.html`, PNG and SVG files from this
+capture. Since LO- remained asserted, ground truth was unavailable and the
+report correctly omitted TP/FP/FN and detector-performance claims.
+
 ## What remains to be validated
 
 During this check the AD8232 electrodes were disconnected: LO- was asserted and

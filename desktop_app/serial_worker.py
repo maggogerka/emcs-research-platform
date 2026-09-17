@@ -18,6 +18,7 @@ class SerialWorker(QThread):
     emg_received = Signal(dict)
     imu_received = Signal(dict)
     event_received = Signal(dict)
+    marker_received = Signal(dict)
     message_received = Signal(str)
     error_received = Signal(str)
     transport_stats = Signal(dict)
@@ -79,6 +80,8 @@ class SerialWorker(QThread):
                         self.imu_received.emit(decoded)
                     elif kind == "event":
                         self.event_received.emit(decoded)
+                    elif kind == "marker":
+                        self.marker_received.emit(decoded)
                     elif kind == "error":
                         self.error_received.emit(decoded)
                     elif kind == "ack":

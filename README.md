@@ -1,4 +1,4 @@
-# EMCS Research Platform
+# EMCS Research Platform v1.0.1
 
 EMCS Research Platform is an open research implementation of an
 electromyographic control-system acquisition and evaluation pipeline based on
@@ -35,19 +35,62 @@ detectors.
 | All grounds | Common GND | 3.3 V-compatible logic |
 
 Detailed wiring notes are in docs/hardware.md.
+Desktop operation and safety controls are described in
+[docs/desktop-application.md](docs/desktop-application.md).
 
-## Figure placeholders
+## Project media
 
-The repository does not use invented images. The following visible placeholders
-identify material required for a future paper or release:
+All media below comes from the working project and is stored in
+[`docs/images/`](docs/images/). Click a still image to open its full-resolution
+version.
 
-- **Prototype photograph:** docs/images/device-prototype.jpg
-- **System architecture:** docs/images/system-architecture.png
-- **Electrical schematic:** docs/images/wiring-diagram.png
-- **Electrode placement:** docs/images/electrode-placement.png
-- **GUI screenshot:** docs/images/gui-screenshot.png
-- **Algorithm flowchart:** docs/images/algorithm-flow.png
-- **Reviewed experimental graphs:** docs/images/experimental-results.png
+### Physical prototype
+
+<p align="center">
+  <img src="docs/images/device-prototype.gif" alt="Animated EMCS hardware prototype" width="480">
+</p>
+
+<p align="center">
+  <a href="docs/images/device-prototype.JPG"><img src="docs/images/device-prototype.JPG" alt="EMCS hardware prototype" width="62%"></a>
+</p>
+
+### Architecture, wiring and electrode placement
+
+<p align="center">
+  <a href="docs/images/system-architecture.png"><img src="docs/images/system-architecture.png" alt="System architecture" width="49%"></a>
+  <a href="docs/images/wiring-diagram.png"><img src="docs/images/wiring-diagram.png" alt="Electrical wiring diagram" width="49%"></a>
+</p>
+
+<p align="center">
+  <a href="docs/images/electrode-placement-forearm.png"><img src="docs/images/electrode-placement-forearm.png" alt="Forearm electrode placement" width="49%"></a>
+  <a href="docs/images/algorithm-flow.png"><img src="docs/images/algorithm-flow.png" alt="Recognition algorithm flow" width="49%"></a>
+</p>
+
+### Desktop application
+
+<p align="center">
+  <a href="docs/images/gui-screenshot-dashboard.png"><img src="docs/images/gui-screenshot-dashboard.png" alt="Dashboard tab" width="90%"></a>
+</p>
+
+<p align="center">
+  <a href="docs/images/gui-screenshot-experiment.png"><img src="docs/images/gui-screenshot-experiment.png" alt="Experiment tab" width="49%"></a>
+  <a href="docs/images/gui-screenshot-result.png"><img src="docs/images/gui-screenshot-result.png" alt="Results tab" width="49%"></a>
+</p>
+
+### Real pilot-session results
+
+<p align="center">
+  <a href="docs/images/experimental-results.png"><img src="docs/images/experimental-results.png" alt="Combined descriptive figures from the real pilot recording" width="90%"></a>
+</p>
+
+The underlying reviewed export is available at
+[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
+It contains the complete losslessly compressed sample CSV, a browser-readable
+preview, events, metadata, integrity hashes, HTML report and PNG/SVG figures.
+This real v1.0.0 recording was interrupted before contract phase markers were
+stored, so it is **not** recognition-validation evidence. Metric figures 04–07
+explicitly state that ground truth is unavailable instead of showing invented
+performance values.
 
 ## Firmware build and execution
 
@@ -76,15 +119,28 @@ On Windows:
     run_ui.bat
 
 The PySide6 interface defaults to COM13. Serial I/O and CRC validation run in a
-dedicated thread. The GUI displays hardware, electrodes, movement and detector
-state; plots raw EMG, RMS envelope, thresholds and all IMU axes; performs
-calibration commands; records CSV; and controls the experiment scenario.
+dedicated thread. The application has seven tabs: Dashboard, Experiment,
+Signals, 3D Orientation, Computer Control, Results and Diagnostics/Settings.
+Persistent indicators expose ESP, ADS1115, MPU6050, electrode, calibration,
+CRC and sequence-gap state on every tab.
 
-Local CSV recordings are saved under data/recordings/ by default and are
-excluded from Git. Typed `emg` and `imu` rows preserve every received native-rate
-sample. They include detector results, lead state, settings and the current
-experiment label, so the two streams can be analyzed without duplicating a
-stale IMU value into every EMG row.
+    python -m desktop_app
+
+Signals provide linked, zoomable and pannable time axes; 5/10/30/60-second
+windows; pause-display without pausing recording; crosshair values; curve
+visibility; phase/event overlays; expansion; and PNG/SVG/CSV export. Absolute
+AD8232 input and its centered AC diagnostic are never presented as the same
+quantity. Charts are presented as a scrollable stack with a readable minimum
+height. Compact F↑/A↑ event labels identify fixed/adaptive starts; release
+lines remain available without overlapping text. Display downsampling does not
+alter saved samples.
+
+Each experiment creates a unique directory under `data/recordings/` containing
+`samples.csv`, `events.csv`, `metadata.json`, `metrics.json`, `report.html` and
+`figures/`. Local recordings are excluded from Git. `samples.csv` preserves
+every received native-rate EMG and IMU sample; `events.csv` separately stores
+detector events and device-timestamped phase markers. Metadata uses only an
+anonymous participant code—never enter a person's name.
 
 ## Recognition algorithm
 
@@ -94,6 +150,12 @@ a 100 kHz bus, the actual recoverable ADS rate must be measured for each build;
 timer gaps and sample indices explicitly expose missed acquisition slots.
 MPU6050 is configured for 100 Hz and its gyroscope bias is estimated from 200
 stationary samples.
+
+The 3D Orientation tab also offers a guided stationary calibration: level,
+left side, right side, nose down, nose up, upside down and a final level
+reference. It estimates residual gyro bias plus per-axis accelerometer offset
+and scale. This improves roll/pitch and the 3D view; yaw remains relative
+because MPU6050 has no magnetometer.
 
 The embedded EMG path performs:
 
@@ -114,9 +176,12 @@ Adaptation is frozen during contractions, lead-off and strong movement.
 
 ## Experiment protocol
 
-The built-in protocol starts with ten seconds of quiet baseline and continues
-with 30 contractions. Every trial has preparation, contraction and rest phases;
-weak, medium and strong labels cycle across trials. See docs/experiment.md.
+The configurable protocol waits for the firmware's actual
+`EMG_CALIBRATION_DONE` event before trials can start. Every trial has prepare,
+contract-cue and rest phases. Prescribed weak/medium/strong instructions are
+balanced and shuffled reproducibly from a recorded seed; they are not measured
+force. Sessions support pause and explicit terminal outcomes: `completed`,
+`aborted_by_user`, `lead_off` and `hardware_error`. See docs/experiment.md.
 
 Successful algorithm validation requires connected electrodes, both lead-off
 inputs low and a labelled human-subject recording collected under an approved
@@ -129,17 +194,23 @@ Capture without the GUI:
 
     python analysis/capture_session.py --port COM13 --duration 60
 
-Analyze a recorded CSV:
+Analyze a v2 session directory (legacy CSV remains supported):
 
-    python analysis/analyze_session.py data/recordings/session.csv
+    python analysis/analyze_session.py data/recordings/<session-id>
 
-The analysis creates 300 dpi PNG files and metrics.json in figures/generated/.
-For labelled experiments it reports TP, FP, FN, precision, recall, F1, false
-positives per minute, recognition latency, rest/contraction envelope
-statistics, and fixed-versus-adaptive results. Unlabelled data produce
+The analysis creates a local HTML report, JSON metrics and publication-oriented
+300 dpi PNG plus SVG figures. For hardware-marker-labelled experiments it
+reports per-detector TP, FP, FN, precision, recall, F1, false positives per
+minute of negative protocol phases, cue-to-detection latency, per-trial values
+and trial-bootstrap 95% confidence intervals. Unlabelled data produce
 descriptive plots only; the software does not fabricate performance metrics.
 The measured bring-up and 60-second integrity check are documented in
 [docs/verification.md](docs/verification.md).
+
+A complete reviewed real pilot export is published in
+[`data/examples/20260917_001221_25ad4ea0/`](data/examples/20260917_001221_25ad4ea0/).
+See its README before interpreting the figures: the session is useful for raw
+signal and sampling inspection but lacks contract-phase ground truth.
 
 ## Repository structure
 
@@ -148,9 +219,10 @@ The measured bring-up and 60-second integrity check are documented in
 | main/ | ESP-IDF firmware |
 | desktop_app/ | PySide6 acquisition and experiment GUI |
 | analysis/ | Capture, integrity checking and scientific analysis |
+| tests/ | Protocol, scheduler, synchronization, metric, setting and mapping tests |
 | docs/ | Hardware, protocol and experiment documentation |
-| docs/images/ | Labelled locations for future reviewed graphics |
-| data/ | Data policy; local recordings are ignored |
+| docs/images/ | Reviewed project photographs, diagrams, GUI captures and result figures |
+| data/ | Data policy, ignored local recordings and reviewed anonymous examples |
 | figures/ | Figure policy; generated results are ignored |
 
 ## Limitations
@@ -161,7 +233,11 @@ The measured bring-up and 60-second integrity check are documented in
   placement and population.
 - Lead-off signals indicate connection state but do not quantify contact
   impedance.
-- No medical, safety-critical or autonomous actuation claim is made.
+- MPU6050 yaw is relative and drifts because the sensor has no magnetometer.
+- Windows Computer Control is disabled by default. It is mutually exclusive
+  with research recording and turns off on F12, disconnect, lead-off,
+  calibration/hardware failure or a data age above 300 ms.
+- No medical or safety-critical claim is made.
 
 ## Citation
 
