@@ -1,0 +1,742 @@
+{
+  "source": ".",
+  "session_id": "20260917_120607_62173cd4",
+  "session_outcome": "completed",
+  "ground_truth_available": true,
+  "ground_truth_source": "device phase markers",
+  "sampling": {
+    "emg": {
+      "samples": 217408,
+      "span_s": 253.208295,
+      "rate_hz": 858.6093121475345,
+      "index_gaps": 313,
+      "timer_gaps": 310,
+      "stream": "emg"
+    },
+    "imu": {
+      "samples": 25320,
+      "span_s": 253.19,
+      "rate_hz": 100.0,
+      "index_gaps": 0,
+      "timer_gaps": 0,
+      "stream": "imu"
+    }
+  },
+  "envelope": {
+    "negative_phases": {
+      "count": 164740,
+      "mean_v": 0.01918962260327086,
+      "median_v": 0.01691787052154535,
+      "std_v": 0.014970116359140905
+    },
+    "contract": {
+      "count": 52608,
+      "mean_v": 0.08256708276935298,
+      "median_v": 0.023299165725708,
+      "std_v": 0.1850383186891325
+    },
+    "by_prescribed_intensity": {
+      "medium": {
+        "count": 17495,
+        "median_v": 0.0226133651733398,
+        "iqr_v": 0.03677157640457154
+      },
+      "strong": {
+        "count": 17592,
+        "median_v": 0.0218915996551513,
+        "iqr_v": 0.031727190017700246
+      },
+      "weak": {
+        "count": 17521,
+        "median_v": 0.0254181747436523,
+        "iqr_v": 0.0324246406555176
+      }
+    }
+  },
+  "fixed_detector": {
+    "tp": 27,
+    "fp": 11,
+    "fn": 3,
+    "precision": 0.7105263157894737,
+    "recall": 0.9,
+    "f1": 0.7941176470588235,
+    "negative_phase_duration_s": 191.897049,
+    "false_positives_per_minute": 3.439344187101074,
+    "cue_to_detection_latency_ms_mean": 597.8475925925926,
+    "cue_to_detection_latency_ms_median": 541.763,
+    "cue_to_detection_latencies_ms": [
+      454.491,
+      591.815,
+      566.529,
+      464.753,
+      344.193,
+      751.094,
+      554.301,
+      1464.865,
+      1228.187,
+      226.991,
+      451.63,
+      859.766,
+      1498.289,
+      541.763,
+      659.73,
+      438.376,
+      429.043,
+      316.595,
+      294.921,
+      582.584,
+      285.176,
+      279.916,
+      489.404,
+      489.434,
+      693.532,
+      608.502,
+      576.005
+    ],
+    "per_trial": [
+      {
+        "trial": 1,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 454.491
+      },
+      {
+        "trial": 2,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 591.815
+      },
+      {
+        "trial": 3,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 566.529
+      },
+      {
+        "trial": 4,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 464.753
+      },
+      {
+        "trial": 5,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 2,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 344.193
+      },
+      {
+        "trial": 6,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 751.094
+      },
+      {
+        "trial": 7,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 554.301
+      },
+      {
+        "trial": 8,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1464.865
+      },
+      {
+        "trial": 9,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1228.187
+      },
+      {
+        "trial": 10,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 226.991
+      },
+      {
+        "trial": 11,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 451.63
+      },
+      {
+        "trial": 12,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 859.766
+      },
+      {
+        "trial": 13,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1498.289
+      },
+      {
+        "trial": 14,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 541.763
+      },
+      {
+        "trial": 15,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 659.73
+      },
+      {
+        "trial": 16,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 438.376
+      },
+      {
+        "trial": 17,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 429.043
+      },
+      {
+        "trial": 18,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 316.595
+      },
+      {
+        "trial": 19,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 294.921
+      },
+      {
+        "trial": 20,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 582.584
+      },
+      {
+        "trial": 21,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 285.176
+      },
+      {
+        "trial": 22,
+        "prescribed_intensity": "medium",
+        "tp": 0,
+        "fp": 1,
+        "fn": 1,
+        "detected": false,
+        "cue_to_detection_latency_ms": null
+      },
+      {
+        "trial": 23,
+        "prescribed_intensity": "strong",
+        "tp": 0,
+        "fp": 2,
+        "fn": 1,
+        "detected": false,
+        "cue_to_detection_latency_ms": null
+      },
+      {
+        "trial": 24,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 279.916
+      },
+      {
+        "trial": 25,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 489.404
+      },
+      {
+        "trial": 26,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 489.434
+      },
+      {
+        "trial": 27,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 693.532
+      },
+      {
+        "trial": 28,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 608.502
+      },
+      {
+        "trial": 29,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 576.005
+      },
+      {
+        "trial": 30,
+        "prescribed_intensity": "weak",
+        "tp": 0,
+        "fp": 1,
+        "fn": 1,
+        "detected": false,
+        "cue_to_detection_latency_ms": null
+      }
+    ],
+    "bootstrap_95_ci": {
+      "precision": [
+        0.5853658536585366,
+        0.8529411764705882
+      ],
+      "recall": [
+        0.7666666666666667,
+        1.0
+      ],
+      "f1": [
+        0.676056338028169,
+        0.9090909090909091
+      ],
+      "cue_to_detection_latency_ms_mean": [
+        486.07659017857145,
+        722.6656024999999
+      ]
+    }
+  },
+  "adaptive_detector": {
+    "tp": 29,
+    "fp": 11,
+    "fn": 1,
+    "precision": 0.725,
+    "recall": 0.9666666666666667,
+    "f1": 0.8285714285714285,
+    "negative_phase_duration_s": 191.897049,
+    "false_positives_per_minute": 3.439344187101074,
+    "cue_to_detection_latency_ms_mean": 583.2817931034483,
+    "cue_to_detection_latency_ms_median": 493.973,
+    "cue_to_detection_latencies_ms": [
+      454.51,
+      591.836,
+      567.748,
+      475.291,
+      349.456,
+      753.151,
+      509.501,
+      1467.238,
+      1231.101,
+      228.22,
+      451.649,
+      859.777,
+      1498.308,
+      543.015,
+      660.887,
+      438.395,
+      429.063,
+      319.002,
+      298.706,
+      584.918,
+      286.464,
+      350.174,
+      376.69,
+      341.544,
+      493.973,
+      489.447,
+      692.272,
+      598.048,
+      574.788
+    ],
+    "per_trial": [
+      {
+        "trial": 1,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 454.51
+      },
+      {
+        "trial": 2,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 591.836
+      },
+      {
+        "trial": 3,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 567.748
+      },
+      {
+        "trial": 4,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 475.291
+      },
+      {
+        "trial": 5,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 349.456
+      },
+      {
+        "trial": 6,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 753.151
+      },
+      {
+        "trial": 7,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 509.501
+      },
+      {
+        "trial": 8,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1467.238
+      },
+      {
+        "trial": 9,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1231.101
+      },
+      {
+        "trial": 10,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 228.22
+      },
+      {
+        "trial": 11,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 451.649
+      },
+      {
+        "trial": 12,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 859.777
+      },
+      {
+        "trial": 13,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 1498.308
+      },
+      {
+        "trial": 14,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 543.015
+      },
+      {
+        "trial": 15,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 660.887
+      },
+      {
+        "trial": 16,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 438.395
+      },
+      {
+        "trial": 17,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 429.063
+      },
+      {
+        "trial": 18,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 319.002
+      },
+      {
+        "trial": 19,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 298.706
+      },
+      {
+        "trial": 20,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 584.918
+      },
+      {
+        "trial": 21,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 286.464
+      },
+      {
+        "trial": 22,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 350.174
+      },
+      {
+        "trial": 23,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 2,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 376.69
+      },
+      {
+        "trial": 24,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 341.544
+      },
+      {
+        "trial": 25,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 493.973
+      },
+      {
+        "trial": 26,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 489.447
+      },
+      {
+        "trial": 27,
+        "prescribed_intensity": "weak",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 692.272
+      },
+      {
+        "trial": 28,
+        "prescribed_intensity": "strong",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 598.048
+      },
+      {
+        "trial": 29,
+        "prescribed_intensity": "medium",
+        "tp": 1,
+        "fp": 1,
+        "fn": 0,
+        "detected": true,
+        "cue_to_detection_latency_ms": 574.788
+      },
+      {
+        "trial": 30,
+        "prescribed_intensity": "weak",
+        "tp": 0,
+        "fp": 2,
+        "fn": 1,
+        "detected": false,
+        "cue_to_detection_latency_ms": null
+      }
+    ],
+    "bootstrap_95_ci": {
+      "precision": [
+        0.6086956521739131,
+        0.8571428571428571
+      ],
+      "recall": [
+        0.9,
+        1.0
+      ],
+      "f1": [
+        0.7297297297297297,
+        0.923076923076923
+      ],
+      "cue_to_detection_latency_ms_mean": [
+        478.2933179310345,
+        706.0472303571427
+      ]
+    }
+  },
+  "figures": [
+    "figures/01-emg-signal-and-thresholds.png",
+    "figures/01-emg-signal-and-thresholds.svg",
+    "figures/02-example-prescribed-contraction.png",
+    "figures/02-example-prescribed-contraction.svg",
+    "figures/03-fixed-adaptive-events.png",
+    "figures/03-fixed-adaptive-events.svg",
+    "figures/04-event-outcome-matrix.png",
+    "figures/04-event-outcome-matrix.svg",
+    "figures/05-precision-recall-f1.png",
+    "figures/05-precision-recall-f1.svg",
+    "figures/06-false-positives-per-minute.png",
+    "figures/06-false-positives-per-minute.svg",
+    "figures/07-cue-to-detection-latency.png",
+    "figures/07-cue-to-detection-latency.svg",
+    "figures/08-envelope-distributions.png",
+    "figures/08-envelope-distributions.svg",
+    "figures/09-imu-motion.png",
+    "figures/09-imu-motion.svg",
+    "figures/10-sampling-intervals-and-gaps.png",
+    "figures/10-sampling-intervals-and-gaps.svg"
+  ]
+}

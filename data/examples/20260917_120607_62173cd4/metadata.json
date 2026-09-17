@@ -1,0 +1,75 @@
+{
+  "participant_id": "P001",
+  "session_note": "",
+  "protocol": {
+    "repetitions": 30,
+    "prepare_s": 3.0,
+    "contract_s": 2.0,
+    "rest_s": 3.0,
+    "seed": 20260916
+  },
+  "algorithm": {
+    "on_coefficient": 6.0,
+    "off_coefficient": 3.0,
+    "motion_gyro_dps": 20.0,
+    "motion_accel_delta_g": 0.25
+  },
+  "firmware": {
+    "target": "esp32s3",
+    "protocol_version": 1
+  },
+  "serial_port": "COM13",
+  "prescribed_intensity_note": "weak/medium/strong are instructions, not measured force",
+  "session_id": "20260917_120607_62173cd4",
+  "application_version": "1.0.1",
+  "git_commit": "8d802b970f5fd35398d0c04e7cabd85c1a855926",
+  "started_utc": "2026-09-17T09:06:07.695724+00:00",
+  "outcome": "completed",
+  "format_version": 2,
+  "label_source": "device_phase_markers",
+  "finished_utc": "2026-09-17T09:10:20.886876+00:00",
+  "error": null,
+  "sample_counts": {
+    "emg": 217408,
+    "imu": 25320
+  },
+  "actual_sample_rates": {
+    "emg_hz": 858.6093121475345,
+    "imu_hz": 100.0
+  },
+  "transport": {
+    "crc_errors": 0,
+    "discarded_bytes": 0,
+    "sequence_gaps": 0
+  },
+  "hardware_status": {
+    "adaptive_off": 191.42063903808594,
+    "adaptive_on": 252.8525390625,
+    "ads_errors": 0,
+    "ads_ok": 1,
+    "ads_samples": 5562721,
+    "detector_state": 5,
+    "detector_state_name": "REFRACTORY",
+    "emg_calibrated": 1,
+    "fixed_off": 206.21014404296875,
+    "fixed_on": 308.3902587890625,
+    "gyro_bias_x": -261.864990234375,
+    "gyro_bias_y": 10.095000267028809,
+    "gyro_bias_z": 39.68000030517578,
+    "imu_calibrating": 0,
+    "leads": 0,
+    "lo_minus": false,
+    "lo_plus": false,
+    "motion": 0,
+    "motion_accel_delta_g": 0.25,
+    "motion_gyro_dps": 20.0,
+    "mpu_errors": 0,
+    "mpu_ok": 1,
+    "mpu_samples": 647066,
+    "off_coefficient": 3.0,
+    "on_coefficient": 6.0,
+    "recording": 1,
+    "stream_enabled": 1,
+    "tx_drops": 0
+  }
+}

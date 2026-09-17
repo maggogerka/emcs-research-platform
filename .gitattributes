@@ -1,8 +1,8 @@
-data/examples/20260917_001221_25ad4ea0/*.csv text eol=lf
-data/examples/20260917_001221_25ad4ea0/*.html text eol=lf
-data/examples/20260917_001221_25ad4ea0/*.json text eol=lf
-data/examples/20260917_001221_25ad4ea0/*.md text eol=lf
-data/examples/20260917_001221_25ad4ea0/*.txt text eol=lf
-data/examples/20260917_001221_25ad4ea0/*.gz binary
-data/examples/20260917_001221_25ad4ea0/figures/*.svg text eol=lf
-data/examples/20260917_001221_25ad4ea0/figures/*.png binary
+data/examples/20260917_120607_62173cd4/*.csv text eol=lf
+data/examples/20260917_120607_62173cd4/*.html text eol=lf
+data/examples/20260917_120607_62173cd4/*.json text eol=lf
+data/examples/20260917_120607_62173cd4/*.md text eol=lf
+data/examples/20260917_120607_62173cd4/*.txt text eol=lf
+data/examples/20260917_120607_62173cd4/*.gz binary
+data/examples/20260917_120607_62173cd4/figures/*.svg text eol=lf
+data/examples/20260917_120607_62173cd4/figures/*.png binary

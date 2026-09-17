@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>EMSU scientific session report</title><style>
+body{font:15px system-ui,sans-serif;max-width:1200px;margin:auto;padding:24px;color:#18212b}
+h1,h2{color:#173f5f} table{border-collapse:collapse;width:100%;margin:12px 0 24px}
+th,td{border:1px solid #b9c3cc;padding:7px;text-align:right} th:first-child,td:first-child{text-align:left}
+figure{margin:24px 0} img{max-width:100%;height:auto} code,pre{background:#f2f4f5;padding:3px}
+.notice{padding:12px;border-left:5px solid #e09f3e;background:#fff8e6}
+</style></head><body>
+<h1>EMSU scientific session report</h1>
+<p>Session: <code>20260917_120607_62173cd4</code>; outcome:
+<strong>completed</strong>.</p>
+<p class="notice">Metrics use device-timestamped hardware phase markers. Prescribed weak/medium/strong labels are protocol instructions, not measured force.</p>
+<h2>Sampling integrity</h2><table><thead><tr><th>Stream</th><th>Samples</th><th>Rate, Hz</th>
+<th>Index gaps</th><th>Timer gaps</th></tr></thead><tbody><tr><td>emg</td><td>217408</td><td>858.61</td><td>313</td><td>310</td></tr><tr><td>imu</td><td>25320</td><td>100</td><td>0</td><td>0</td></tr></tbody></table>
+<h2>Detector metrics</h2><table><thead><tr><th>Detector</th><th>TP</th><th>FP</th><th>FN</th>
+<th>Precision</th><th>Recall</th><th>F1</th><th>FP/min</th><th>Cue-to-detection, ms</th><th>Trial bootstrap 95% CI</th>
+</tr></thead><tbody><tr><td>Fixed</td><td>27</td><td>11</td><td>3</td><td>0.71053</td><td>0.9</td><td>0.79412</td><td>3.4393</td><td>597.85</td><td><code>{&quot;precision&quot;: [0.5853658536585366, 0.8529411764705882], &quot;recall&quot;: [0.7666666666666667, 1.0], &quot;f1&quot;: [0.676056338028169, 0.9090909090909091], &quot;cue_to_detection_latency_ms_mean&quot;: [486.07659017857145, 722.6656024999999]}</code></td></tr><tr><td>Adaptive</td><td>29</td><td>11</td><td>1</td><td>0.725</td><td>0.96667</td><td>0.82857</td><td>3.4393</td><td>583.28</td><td><code>{&quot;precision&quot;: [0.6086956521739131, 0.8571428571428571], &quot;recall&quot;: [0.9, 1.0], &quot;f1&quot;: [0.7297297297297297, 0.923076923076923], &quot;cue_to_detection_latency_ms_mean&quot;: [478.2933179310345, 706.0472303571427]}</code></td></tr></tbody></table>
+<h2>Figures</h2><figure><img src="figures/01-emg-signal-and-thresholds.png"><figcaption>01-emg-signal-and-thresholds</figcaption></figure><figure><img src="figures/02-example-prescribed-contraction.png"><figcaption>02-example-prescribed-contraction</figcaption></figure><figure><img src="figures/03-fixed-adaptive-events.png"><figcaption>03-fixed-adaptive-events</figcaption></figure><figure><img src="figures/04-event-outcome-matrix.png"><figcaption>04-event-outcome-matrix</figcaption></figure><figure><img src="figures/05-precision-recall-f1.png"><figcaption>05-precision-recall-f1</figcaption></figure><figure><img src="figures/06-false-positives-per-minute.png"><figcaption>06-false-positives-per-minute</figcaption></figure><figure><img src="figures/07-cue-to-detection-latency.png"><figcaption>07-cue-to-detection-latency</figcaption></figure><figure><img src="figures/08-envelope-distributions.png"><figcaption>08-envelope-distributions</figcaption></figure><figure><img src="figures/09-imu-motion.png"><figcaption>09-imu-motion</figcaption></figure><figure><img src="figures/10-sampling-intervals-and-gaps.png"><figcaption>10-sampling-intervals-and-gaps</figcaption></figure>
+<h2>Session metadata</h2><pre>{
+  &quot;participant_id&quot;: &quot;P001&quot;,
+  &quot;session_note&quot;: &quot;&quot;,
+  &quot;protocol&quot;: {
+    &quot;repetitions&quot;: 30,
+    &quot;prepare_s&quot;: 3.0,
+    &quot;contract_s&quot;: 2.0,
+    &quot;rest_s&quot;: 3.0,
+    &quot;seed&quot;: 20260916
+  },
+  &quot;algorithm&quot;: {
+    &quot;on_coefficient&quot;: 6.0,
+    &quot;off_coefficient&quot;: 3.0,
+    &quot;motion_gyro_dps&quot;: 20.0,
+    &quot;motion_accel_delta_g&quot;: 0.25
+  },
+  &quot;firmware&quot;: {
+    &quot;target&quot;: &quot;esp32s3&quot;,
+    &quot;protocol_version&quot;: 1
+  },
+  &quot;serial_port&quot;: &quot;COM13&quot;,
+  &quot;prescribed_intensity_note&quot;: &quot;weak/medium/strong are instructions, not measured force&quot;,
+  &quot;session_id&quot;: &quot;20260917_120607_62173cd4&quot;,
+  &quot;application_version&quot;: &quot;1.0.1&quot;,
+  &quot;git_commit&quot;: &quot;8d802b970f5fd35398d0c04e7cabd85c1a855926&quot;,
+  &quot;started_utc&quot;: &quot;2026-09-17T09:06:07.695724+00:00&quot;,
+  &quot;outcome&quot;: &quot;completed&quot;,
+  &quot;format_version&quot;: 2,
+  &quot;label_source&quot;: &quot;device_phase_markers&quot;,
+  &quot;finished_utc&quot;: &quot;2026-09-17T09:10:20.886876+00:00&quot;,
+  &quot;error&quot;: null,
+  &quot;sample_counts&quot;: {
+    &quot;emg&quot;: 217408,
+    &quot;imu&quot;: 25320
+  },
+  &quot;actual_sample_rates&quot;: {
+    &quot;emg_hz&quot;: 858.6093121475345,
+    &quot;imu_hz&quot;: 100.0
+  },
+  &quot;transport&quot;: {
+    &quot;crc_errors&quot;: 0,
+    &quot;discarded_bytes&quot;: 0,
+    &quot;sequence_gaps&quot;: 0
+  },
+  &quot;hardware_status&quot;: {
+    &quot;adaptive_off&quot;: 191.42063903808594,
+    &quot;adaptive_on&quot;: 252.8525390625,
+    &quot;ads_errors&quot;: 0,
+    &quot;ads_ok&quot;: 1,
+    &quot;ads_samples&quot;: 5562721,
+    &quot;detector_state&quot;: 5,
+    &quot;detector_state_name&quot;: &quot;REFRACTORY&quot;,
+    &quot;emg_calibrated&quot;: 1,
+    &quot;fixed_off&quot;: 206.21014404296875,
+    &quot;fixed_on&quot;: 308.3902587890625,
+    &quot;gyro_bias_x&quot;: -261.864990234375,
+    &quot;gyro_bias_y&quot;: 10.095000267028809,
+    &quot;gyro_bias_z&quot;: 39.68000030517578,
+    &quot;imu_calibrating&quot;: 0,
+    &quot;leads&quot;: 0,
+    &quot;lo_minus&quot;: false,
+    &quot;lo_plus&quot;: false,
+    &quot;motion&quot;: 0,
+    &quot;motion_accel_delta_g&quot;: 0.25,
+    &quot;motion_gyro_dps&quot;: 20.0,
+    &quot;mpu_errors&quot;: 0,
+    &quot;mpu_ok&quot;: 1,
+    &quot;mpu_samples&quot;: 647066,
+    &quot;off_coefficient&quot;: 3.0,
+    &quot;on_coefficient&quot;: 6.0,
+    &quot;recording&quot;: 1,
+    &quot;stream_enabled&quot;: 1,
+    &quot;tx_drops&quot;: 0
+  }
+}</pre>
+<h2>Limitations</h2><p>ADS1115 voltage is not clinical ECG amplitude. MPU6050 yaw is relative and drifts without a magnetometer.
+Event metrics count one first detector start per hardware-marked contraction interval. This software is a research prototype,
+not a medical device.</p></body></html>
